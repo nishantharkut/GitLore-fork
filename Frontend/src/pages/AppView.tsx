@@ -1,11 +1,26 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
+import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
 import gsap from "gsap";
 import { animate as animeAnimate } from "animejs";
 import { Group, Panel, Separator, useDefaultLayout, useGroupRef } from "react-resizable-panels";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/context/AuthContext";
+import { useRepo } from "@/context/RepoContext";
+import {
+  analyzeLine,
+  explainComment,
+  validateRepo,
+  fetchRepoIndex,
+  fetchRepoFileRaw,
+  type InsightExplanation,
+  type InsightNarrative,
+} from "@/lib/gitloreApi";
+import { pathsToFileTree, type FileNode } from "@/lib/pathsToFileTree";
+import { startGithubOAuth } from "@/lib/githubOAuth";
 
 /* ─── Mock Data ─── */
 const MOCK_PRS = [
@@ -14,68 +29,21 @@ const MOCK_PRS = [
   "PR #12: Refactor payment service",
 ];
 
-/* ─── File tree ─── */
-interface FileNode {
-  name: string;
-  type: "file" | "folder";
-  children?: FileNode[];
-  path?: string;
+const FALLBACK_CODE = `// Select a file in the tree or set owner/repo/branch in the bar above.
+// File list is loaded from GitHub (GET /api/repo/.../index).`;
+
+function cmLanguageForPath(filePath: string) {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".py")) return python();
+  if (lower.endsWith(".tsx") || lower.endsWith(".ts"))
+    return javascript({ typescript: true, jsx: true });
+  if (lower.endsWith(".jsx") || lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs"))
+    return javascript({ jsx: true });
+  return javascript({ jsx: false });
 }
 
-const FILE_TREE: FileNode[] = [
-  {
-    name: "src",
-    type: "folder",
-    children: [
-      { name: "middleware", type: "folder", children: [
-        { name: "rate_limiter.py", type: "file", path: "src/middleware/rate_limiter.py" },
-      ]},
-      { name: "components", type: "folder", children: [
-        { name: "UserProfile.tsx", type: "file", path: "src/components/UserProfile.tsx" },
-      ]},
-      { name: "services", type: "folder", children: [
-        { name: "auth_service.py", type: "file", path: "src/services/auth_service.py" },
-      ]},
-    ],
-  },
-];
-
-const SELECTED_FILE = "src/middleware/rate_limiter.py";
-
-const PYTHON_CODE = `from datetime import datetime, timedelta
-from collections import defaultdict
-import time
-
-class RateLimiter:
-    def __init__(self, max_requests=100, window_seconds=60):
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self.requests = defaultdict(list)
-
-    def is_allowed(self, client_id: str) -> bool:
-        now = time.time()
-        window_start = now - self.window_seconds
-        self.requests[client_id] = [
-            t for t in self.requests[client_id] if t > window_start
-        ]
-        if len(self.requests[client_id]) >= self.max_requests:
-            return False
-        self.requests[client_id].append(now)
-        return True
-
-    def get_remaining(self, client_id: str) -> int:
-        now = time.time()
-        window_start = now - self.window_seconds
-        current = len([
-            t for t in self.requests[client_id] if t > window_start
-        ])
-        return max(0, self.max_requests - current)`;
-
-function getBlame(line: number): string {
-  if (line >= 1 && line <= 5) return "teammate-b \u00b7 3 months ago";
-  if (line >= 6 && line <= 10) return "teammate-a \u00b7 8 months ago";
-  if (line >= 11 && line <= 20) return "teammate-b \u00b7 3 months ago";
-  return "teammate-c \u00b7 1 year ago";
+function getBlame(_line: number): string {
+  return "Git blame \u00b7 use Analyze on a line for real history";
 }
 
 /* ─── Diff data ─── */
@@ -106,67 +74,23 @@ const COMMENTS: ReviewComment[] = [
   { line: 16, text: "missing error handling", author: "reviewer-3" },
 ];
 
-/* ─── Explanation data ─── */
-interface Explanation {
-  header: string; buggyCode: string; fixedCode: string;
-  why: string; principle: string; link: string;
-  confidence: "HIGH" | "MEDIUM" | "LOW";
+/** Diff text sent with review-comment explain API */
+const DIFF_HUNK_STRING = DIFF_LINES.map((l) => l.content).join("\n");
+
+function parsePrNumber(prLabel: string): number {
+  const m = prLabel.match(/PR\s*#(\d+)/i);
+  return m ? parseInt(m[1], 10) : 1;
 }
 
-const EXPLANATIONS: Record<string, Explanation> = {
-  "memory leak": {
-    header: "React useEffect Missing Cleanup",
-    buggyCode: `useEffect(() => {\n  fetch(\`/api/users/\${userId}\`)\n    .then(res => res.json())\n    .then(data => setData(data));\n}, [userId]);`,
-    fixedCode: `useEffect(() => {\n  const controller = new AbortController();\n  fetch(\`/api/users/\${userId}\`, {\n    signal: controller.signal,\n  })\n    .then(res => res.json())\n    .then(data => setData(data))\n    .catch(err => {\n      if (err.name !== 'AbortError') throw err;\n    });\n  return () => controller.abort();\n}, [userId]);`,
-    why: "If UserProfile unmounts before the fetch completes, setData runs on an unmounted component. In development React warns you. In production this silently leaks memory with every navigation.",
-    principle: "React async effect cleanup pattern",
-    link: "react.dev/learn/synchronizing-with-effects",
-    confidence: "HIGH",
-  },
-  "N+1": {
-    header: "Potential N+1 Query Pattern",
-    buggyCode: `fetch(\`/api/users/\${userId}\`)\n  .then(res => res.json())\n  .then(data => setData(data));`,
-    fixedCode: `const users = await fetchUsers([userId]);\nsetData(users[0]);`,
-    why: "Each component instance fires a separate fetch. If this component renders in a list, you'll make N API calls instead of one batched request.",
-    principle: "Batch fetching / DataLoader pattern",
-    link: "graphql.org/learn/best-practices/#server-side-batching-caching",
-    confidence: "MEDIUM",
-  },
-  "missing error handling": {
-    header: "Unhandled Promise Rejection",
-    buggyCode: `fetch(\`/api/users/\${userId}\`)\n  .then(res => res.json())\n  .then(data => setData(data));`,
-    fixedCode: `fetch(\`/api/users/\${userId}\`)\n  .then(res => {\n    if (!res.ok) throw new Error(res.statusText);\n    return res.json();\n  })\n  .then(data => setData(data))\n  .catch(err => setError(err.message));`,
-    why: "If the fetch fails (network error, 4xx, 5xx), the promise chain silently swallows the error. The UI stays in a loading state forever with no feedback to the user.",
-    principle: "Defensive async error handling",
-    link: "developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
-    confidence: "HIGH",
-  },
-};
-
-/* ─── Narrative data ─── */
+/* ─── Narrative / explanation panels ─── */
 interface TimelineDot { color: string; label: string; sublabel: string; date: string; }
-interface Narrative {
-  oneLiner: string; timeline: TimelineDot[];
-  debate: string; impact: string; confidence: "HIGH" | "MEDIUM" | "LOW";
-}
-
-const NARRATIVE_6_10: Narrative = {
-  oneLiner: "Rate limiting added after a DDoS incident; team chose in-memory over Redis due to infrastructure constraints.",
-  timeline: [
-    { color: "#E74C3C", label: "Issue #820", sublabel: "503 errors reported", date: "Mar 10" },
-    { color: "#C9A84C", label: "PR #847", sublabel: "Rate limiting PR opened", date: "Mar 12" },
-    { color: "#F39C12", label: "Review", sublabel: "Redis vs in-memory debate", date: "Mar 13" },
-    { color: "#2ECC71", label: "Merged", sublabel: "In-memory chosen", date: "Mar 15" },
-  ],
-  debate: "Teammate A proposed Redis-based rate limiting for distributed support. Teammate B argued DevOps couldn't provision Redis before the next expected attack. The team chose in-memory token bucket with a 48-hour TTL.",
-  impact: "503 error rate dropped from 12% to 0.1% within 24 hours.",
-  confidence: "HIGH",
-};
 
 type PanelContent =
   | { type: "idle" }
-  | { type: "explanation"; data: Explanation }
-  | { type: "narrative"; line: number; data: Narrative };
+  | { type: "need-auth" }
+  | { type: "error"; message: string }
+  | { type: "explanation"; data: InsightExplanation }
+  | { type: "narrative"; line: number; data: InsightNarrative };
 
 /* ─── CodeMirror theme ─── */
 /** `mobileSoftWrap` applies only when `mobile`; desktop always uses no-wrap + horizontal scroll. */
@@ -231,34 +155,54 @@ const FOLDER_INDENT_CLASSES = [
 
 const pickIndentClass = (depth: number, classes: readonly string[]) => classes[Math.min(depth, classes.length - 1)];
 
-const FileTreeNode = ({ node, depth = 0 }: { node: FileNode; depth?: number }) => {
-  const [open, setOpen] = useState(true);
-  const isSelected = node.path === SELECTED_FILE;
+const FileTreeNode = ({
+  node,
+  depth = 0,
+  selectedPath,
+  onSelectFile,
+}: {
+  node: FileNode;
+  depth?: number;
+  selectedPath: string;
+  onSelectFile: (path: string) => void;
+}) => {
+  const [open, setOpen] = useState(depth < 2);
+  const isSelected = node.type === "file" && node.path === selectedPath;
 
   if (node.type === "file") {
     return (
-      <div
-        className={`flex items-center py-1 px-2 text-sm md:text-xs font-code cursor-default transition-colors ${
+      <button
+        type="button"
+        onClick={() => node.path && onSelectFile(node.path)}
+        className={`flex w-full items-center py-1 px-2 text-left text-sm md:text-xs font-code transition-colors ${
           isSelected ? "bg-gitlore-accent/10 text-gitlore-accent" : "text-gitlore-text-secondary hover:text-gitlore-text hover:bg-gitlore-surface-hover"
         } ${pickIndentClass(depth, FILE_INDENT_CLASSES)}`}
       >
         {node.name}
-      </div>
+      </button>
     );
   }
 
   return (
     <div>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         className={`flex w-full items-center px-2 py-1 text-sm font-code text-gitlore-text-secondary transition-colors hover:bg-gitlore-surface-hover hover:text-gitlore-text md:text-xs ${pickIndentClass(depth, FOLDER_INDENT_CLASSES)}`}
       >
         <Chevron open={open} />
         {node.name}
       </button>
-      {open && node.children?.map((child) => (
-        <FileTreeNode key={child.name} node={child} depth={depth + 1} />
-      ))}
+      {open &&
+        node.children?.map((child) => (
+          <FileTreeNode
+            key={`${depth}-${child.name}`}
+            node={child}
+            depth={depth + 1}
+            selectedPath={selectedPath}
+            onSelectFile={onSelectFile}
+          />
+        ))}
     </div>
   );
 };
@@ -402,7 +346,7 @@ const StoryTimeline = ({ dots }: { dots: TimelineDot[] }) => {
   );
 };
 
-const NarrativePanel = ({ narrative, line }: { narrative: Narrative | null; line: number | null }) => {
+const NarrativePanel = ({ narrative, line }: { narrative: InsightNarrative | null; line: number | null }) => {
   if (!narrative) {
     return (
       <div className="flex items-center justify-center h-full p-8">
@@ -451,7 +395,7 @@ const SplitDiffView = ({ buggyCode, fixedCode }: { buggyCode: string; fixedCode:
   </div>
 );
 
-const ExplanationPanel = ({ explanation }: { explanation: Explanation | null }) => {
+const ExplanationPanel = ({ explanation }: { explanation: InsightExplanation | null }) => {
   if (!explanation) return null;
   const confidenceColor = explanation.confidence === "HIGH" ? "text-gitlore-success" : explanation.confidence === "MEDIUM" ? "text-gitlore-warning" : "text-gitlore-error";
   const dotColor = explanation.confidence === "HIGH" ? "bg-gitlore-success" : explanation.confidence === "MEDIUM" ? "bg-gitlore-warning" : "bg-gitlore-error";
@@ -491,16 +435,102 @@ const IdeResizeHandle = () => (
 );
 
 const AppView = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user, loading: authLoading } = useAuth();
+  const { target, repoFull, setTarget, repoReady, repoResolving } = useRepo();
   const isMobile = useIsMobile();
+  const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  const [treeLoading, setTreeLoading] = useState(false);
+  const [treeError, setTreeError] = useState<string | null>(null);
+  const [sourceCode, setSourceCode] = useState(FALLBACK_CODE);
+  const [fileLoading, setFileLoading] = useState(false);
   const [mobileCodeWrap, setMobileCodeWrap] = useState(true);
-  const cmTheme = useMemo(() => buildCmTheme(isMobile, mobileCodeWrap), [isMobile, mobileCodeWrap]);
-
   const [selectedPR, setSelectedPR] = useState(MOCK_PRS[0]);
   const [panel, setPanel] = useState<PanelContent>({ type: "idle" });
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [repoCheckMsg, setRepoCheckMsg] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [leftTab, setLeftTab] = useState<LeftTab>("code");
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
+
+  const cmTheme = useMemo(() => buildCmTheme(isMobile, mobileCodeWrap), [isMobile, mobileCodeWrap]);
+  const cmExtensions = useMemo(
+    () => [
+      cmLanguageForPath(target.filePath || ""),
+      ...(isMobile && mobileCodeWrap ? [EditorView.lineWrapping] : []),
+    ],
+    [target.filePath, isMobile, mobileCodeWrap]
+  );
+
+  const onSelectFile = useCallback(
+    (path: string) => {
+      setTarget({ filePath: path });
+    },
+    [setTarget]
+  );
+
+  useEffect(() => {
+    const st = location.state as { file?: string } | null;
+    if (st?.file) {
+      setTarget({ filePath: st.file });
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate, setTarget]);
+
+  useEffect(() => {
+    if (!user || !repoReady) {
+      setFileTree([]);
+      setTreeLoading(false);
+      if (!repoReady) setTreeError(null);
+      return;
+    }
+    let cancelled = false;
+    setTreeLoading(true);
+    setTreeError(null);
+    void fetchRepoIndex(target.owner, target.name, target.branch, 500)
+      .then((idx) => {
+        if (cancelled) return;
+        setFileTree(pathsToFileTree(idx.paths));
+      })
+      .catch((e) => {
+        if (!cancelled) setTreeError(e instanceof Error ? e.message : "Failed to load tree");
+      })
+      .finally(() => {
+        if (!cancelled) setTreeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, repoReady, target.owner, target.name, target.branch]);
+
+  useEffect(() => {
+    if (!user || !repoReady || !target.filePath?.trim()) {
+      setSourceCode(FALLBACK_CODE);
+      return;
+    }
+    let cancelled = false;
+    setFileLoading(true);
+    void fetchRepoFileRaw(target.owner, target.name, target.filePath, target.branch)
+      .then((r) => {
+        if (cancelled) return;
+        if (r.isBinary) {
+          setSourceCode(`// ${r.message || "Binary or unreadable file"}\n`);
+        } else {
+          setSourceCode(r.text ?? "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSourceCode("// Could not load file (check path, branch, or permissions).\n");
+      })
+      .finally(() => {
+        if (!cancelled) setFileLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, repoReady, target.owner, target.name, target.filePath, target.branch]);
 
   const desktopPanelRef = useRef<HTMLDivElement>(null);
   const mobilePanelRef = useRef<HTMLDivElement>(null);
@@ -544,28 +574,69 @@ const AppView = () => {
     }
   }, [panel]);
 
-  const handleCommentClick = (comment: ReviewComment) => {
-    const expl = EXPLANATIONS[comment.text];
-    if (expl) {
-      setPanel({ type: "explanation", data: expl });
+  const handleCommentClick = useCallback(
+    async (comment: ReviewComment) => {
+      if (!user) {
+        setPanel({ type: "need-auth" });
+        setPanelOpen(true);
+        return;
+      }
       setPanelOpen(true);
-    }
-  };
+      setInsightLoading(true);
+      setPanel({ type: "idle" });
+      try {
+        const data = await explainComment({
+          comment: comment.text,
+          diff_hunk: DIFF_HUNK_STRING,
+          file_path: target.filePath || "demo.tsx",
+          line: comment.line,
+          repo: repoFull,
+          pr_number: parsePrNumber(selectedPR),
+        });
+        setPanel({ type: "explanation", data });
+      } catch (e) {
+        setPanel({ type: "error", message: e instanceof Error ? e.message : "Explain request failed" });
+      } finally {
+        setInsightLoading(false);
+      }
+    },
+    [user, repoFull, selectedPR, target.filePath]
+  );
 
-  const handleLineClickAnime = useCallback((lineNum: number, el?: HTMLElement) => {
-    if (el) {
-      animeAnimate(el, {
-        backgroundColor: ["rgba(201,168,76,0)", "rgba(201,168,76,0.15)", "rgba(201,168,76,0.05)"],
-        duration: 800,
-        ease: "outQuad",
-      });
-    }
-    setSelectedLine(lineNum);
-    if (lineNum >= 6 && lineNum <= 10) {
-      setPanel({ type: "narrative", line: lineNum, data: NARRATIVE_6_10 });
+  const handleLineClickAnime = useCallback(
+    async (lineNum: number, el?: HTMLElement) => {
+      if (el) {
+        animeAnimate(el, {
+          backgroundColor: ["rgba(201,168,76,0)", "rgba(201,168,76,0.15)", "rgba(201,168,76,0.05)"],
+          duration: 800,
+          ease: "outQuad",
+        });
+      }
+      setSelectedLine(lineNum);
+      if (!user) {
+        setPanel({ type: "need-auth" });
+        setPanelOpen(true);
+        return;
+      }
       setPanelOpen(true);
-    }
-  }, []);
+      setInsightLoading(true);
+      setPanel({ type: "idle" });
+      try {
+        const data = await analyzeLine({
+          repo: repoFull,
+          file_path: target.filePath,
+          line_number: lineNum,
+          branch: target.branch,
+        });
+        setPanel({ type: "narrative", line: lineNum, data });
+      } catch (e) {
+        setPanel({ type: "error", message: e instanceof Error ? e.message : "Analyze request failed" });
+      } finally {
+        setInsightLoading(false);
+      }
+    },
+    [user, repoFull, target.filePath, target.branch]
+  );
 
   const handleDiffLineClick = useCallback((lineNum: number, el: HTMLElement) => {
     animeAnimate(el, {
@@ -575,17 +646,41 @@ const AppView = () => {
     });
   }, []);
 
-  const codeLines = PYTHON_CODE.split("\n");
+  const codeLines = sourceCode.split("\n");
   const blameLines = codeLines.map((_, i) => getBlame(i + 1));
 
-  const panelUI = panel.type === "explanation"
-    ? <ExplanationPanel explanation={panel.data} />
-    : panel.type === "narrative"
-    ? <NarrativePanel narrative={panel.data} line={panel.line} />
-    : (
-      <div className="flex items-center justify-center h-full p-8">
-        <p className="text-sm text-gitlore-text-secondary text-center">
-          {leftTab === "code" ? "Click a line to see its story" : "Click a review comment to see the explanation"}
+  const panelUI =
+    insightLoading ? (
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-center text-sm text-gitlore-text-secondary">Loading insight…</p>
+      </div>
+    ) : panel.type === "need-auth" ? (
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+        <p className="text-center text-sm text-gitlore-text-secondary">
+          Sign in with GitHub to run blame narratives and review explanations against the configured repository.
+        </p>
+        <button
+          type="button"
+          onClick={() => startGithubOAuth()}
+          className="rounded-sm bg-gitlore-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gitlore-accent-hover"
+        >
+          Sign in with GitHub
+        </button>
+      </div>
+    ) : panel.type === "error" ? (
+      <div className="p-5">
+        <p className="text-sm text-gitlore-error">{panel.message}</p>
+      </div>
+    ) : panel.type === "explanation" ? (
+      <ExplanationPanel explanation={panel.data} />
+    ) : panel.type === "narrative" ? (
+      <NarrativePanel narrative={panel.data} line={panel.line} />
+    ) : (
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-center text-sm text-gitlore-text-secondary">
+          {leftTab === "code"
+            ? "Click a line to analyze the configured file path with Git blame (see bar above)."
+            : "Click a review comment to get an AI explanation via the API."}
         </p>
       </div>
     );
@@ -620,11 +715,16 @@ const AppView = () => {
   const selectedBlame = selectedLine ? getBlame(selectedLine) : null;
 
   const codeEditor = (
-    <div className="min-w-0 flex-1 min-h-0 [&_.cm-editor]:h-full [&_.cm-editor]:min-w-0">
+    <div className="relative min-w-0 flex-1 min-h-0 [&_.cm-editor]:h-full [&_.cm-editor]:min-w-0">
+      {fileLoading && (
+        <div className="absolute right-2 top-2 z-10 rounded bg-gitlore-surface px-2 py-0.5 font-code text-[10px] text-gitlore-text-secondary">
+          Loading…
+        </div>
+      )}
       <CodeMirror
-        value={PYTHON_CODE}
-        key={isMobile ? `m-${mobileCodeWrap ? "wrap" : "nowrap"}` : "d"}
-        extensions={[python(), ...(isMobile && mobileCodeWrap ? [EditorView.lineWrapping] : [])]}
+        value={sourceCode}
+        key={`${target.filePath}-${isMobile ? `m-${mobileCodeWrap ? "wrap" : "nowrap"}` : "d"}`}
+        extensions={cmExtensions}
         theme={cmTheme}
         editable={false}
         basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: true, highlightActiveLineGutter: true }}
@@ -664,7 +764,19 @@ const AppView = () => {
           </div>
           <div>
             <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 px-1 font-medium">Files</div>
-            {FILE_TREE.map((node) => <FileTreeNode key={node.name} node={node} />)}
+            {treeError && (
+              <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{treeError}</p>
+            )}
+            {treeLoading && <p className="px-2 py-1 text-xs text-gitlore-text-secondary">Loading tree…</p>}
+            {!treeLoading &&
+              fileTree.map((node) => (
+                <FileTreeNode
+                  key={node.name}
+                  node={node}
+                  selectedPath={target.filePath}
+                  onSelectFile={onSelectFile}
+                />
+              ))}
           </div>
         </div>
       )}
@@ -725,12 +837,12 @@ const AppView = () => {
         )}
         <div className="min-w-0 flex-1" />
         <span className="hidden truncate px-3 py-2 font-code text-sm text-gitlore-text-secondary md:block md:max-lg:text-xs">
-          {SELECTED_FILE}
+          {target.filePath || "— no file selected —"}
         </span>
       </div>
       <div className="border-t border-gitlore-border/60 px-3 py-2 md:hidden">
         <span className="block truncate font-code text-[11px] leading-5 text-gitlore-text-secondary">
-          {SELECTED_FILE}
+          {target.filePath || "— no file selected —"}
         </span>
       </div>
     </div>
@@ -744,13 +856,117 @@ const AppView = () => {
       </div>
       <div className="p-2">
         <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 px-2 font-medium md:max-lg:text-[11px]">Files</div>
-        {FILE_TREE.map((node) => <FileTreeNode key={node.name} node={node} />)}
+        {treeError && (
+          <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{treeError}</p>
+        )}
+        {treeLoading && <p className="px-2 py-1 text-xs text-gitlore-text-secondary">Loading tree…</p>}
+        {!treeLoading &&
+          fileTree.map((node) => (
+            <FileTreeNode
+              key={node.name}
+              node={node}
+              selectedPath={target.filePath}
+              onSelectFile={onSelectFile}
+            />
+          ))}
       </div>
     </aside>
   );
 
+  const checkRepo = async () => {
+    if (!user) {
+      setRepoCheckMsg("Sign in first to validate private repos");
+      return;
+    }
+    setRepoCheckMsg(null);
+    try {
+      const r = await validateRepo(target.owner.trim(), target.name.trim());
+      setRepoCheckMsg(r.found ? `OK${r.url ? ` · ${r.url}` : ""}` : "Not found or no access");
+    } catch (e) {
+      setRepoCheckMsg(e instanceof Error ? e.message : "Validation failed");
+    }
+  };
+
+  const repoTargetBar = (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gitlore-border bg-gitlore-surface px-3 py-2 text-[11px] md:text-xs">
+      <span className="font-medium text-gitlore-text-secondary">Blame / analyze target</span>
+      <input
+        aria-label="Owner"
+        value={target.owner}
+        onChange={(e) => setTarget({ owner: e.target.value })}
+        className="w-[88px] rounded-sm border border-gitlore-border bg-gitlore-code px-2 py-1 font-code text-gitlore-text outline-none focus:border-gitlore-accent md:w-[100px]"
+        placeholder="owner"
+      />
+      <span className="text-gitlore-text-secondary">/</span>
+      <input
+        aria-label="Repository"
+        value={target.name}
+        onChange={(e) => setTarget({ name: e.target.value })}
+        className="w-[100px] rounded-sm border border-gitlore-border bg-gitlore-code px-2 py-1 font-code text-gitlore-text outline-none focus:border-gitlore-accent md:w-[120px]"
+        placeholder="repo"
+      />
+      <input
+        aria-label="File path"
+        value={target.filePath}
+        onChange={(e) => setTarget({ filePath: e.target.value })}
+        className="min-w-[120px] flex-1 rounded-sm border border-gitlore-border bg-gitlore-code px-2 py-1 font-code text-gitlore-text outline-none focus:border-gitlore-accent"
+        placeholder="path/to/file.py"
+      />
+      <input
+        aria-label="Branch"
+        value={target.branch}
+        onChange={(e) => setTarget({ branch: e.target.value })}
+        className="w-[72px] rounded-sm border border-gitlore-border bg-gitlore-code px-2 py-1 font-code text-gitlore-text outline-none focus:border-gitlore-accent md:w-[84px]"
+        placeholder="branch"
+      />
+      <button
+        type="button"
+        onClick={() => void checkRepo()}
+        className="rounded-sm border border-gitlore-border px-2 py-1 font-medium text-gitlore-text transition-colors hover:border-gitlore-accent hover:text-gitlore-accent"
+      >
+        Validate
+      </button>
+      {repoCheckMsg && <span className="font-code text-gitlore-text-secondary">{repoCheckMsg}</span>}
+    </div>
+  );
+
+  const authBanner =
+    !authLoading && !user ? (
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gitlore-border bg-gitlore-accent/10 px-3 py-2 text-xs md:text-sm">
+        <span className="text-gitlore-text">Connect GitHub to use narratives, explain, and repo APIs.</span>
+        <button
+          type="button"
+          onClick={() => startGithubOAuth()}
+          className="shrink-0 rounded-sm bg-gitlore-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-gitlore-accent-hover"
+        >
+          Sign in
+        </button>
+      </div>
+    ) : null;
+
+  const repoGate =
+    user && repoResolving ? (
+      <div className="flex shrink-0 items-center justify-center border-b border-gitlore-border bg-gitlore-surface px-3 py-6 text-sm text-gitlore-text-secondary">
+        Loading your most recently updated repository…
+      </div>
+    ) : user && !repoReady ? (
+      <div className="flex shrink-0 flex-col items-center justify-center gap-2 border-b border-gitlore-border bg-gitlore-surface px-3 py-8 text-center text-sm text-gitlore-text-secondary">
+        <p className="max-w-md">
+          No repository selected. Open the header search, choose <span className="text-gitlore-text">Repositories</span>, and pick a repo to load the file tree and editor.
+        </p>
+      </div>
+    ) : null;
+
+  const showRepoBar = !user || !repoResolving;
+  const showIde = !user || repoReady;
+
   return (
-    <div className="flex h-[calc(100dvh-56px)] overflow-hidden">
+    <div className="flex h-[calc(100dvh-56px)] min-h-0 flex-col overflow-hidden">
+      {authBanner}
+      {repoGate}
+      {showRepoBar ? repoTargetBar : null}
+      {showIde ? (
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       {isMobile ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {mobileRepoAccordion}
@@ -882,7 +1098,7 @@ const AppView = () => {
         </Group>
       )}
 
-      {panelOpen && panel.type !== "idle" && (
+      {panelOpen && (insightLoading || panel.type !== "idle") && (
         <div className="fixed inset-0 z-50 flex flex-col justify-end md:hidden">
           <button
             type="button"
@@ -901,6 +1117,8 @@ const AppView = () => {
           </div>
         </div>
       )}
+      </div>
+      ) : null}
     </div>
   );
 };

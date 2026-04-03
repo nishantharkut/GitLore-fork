@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FadeIn } from "../components/effects/FadeIn";
+import { useAuth } from "@/context/AuthContext";
+import { useRepo } from "@/context/RepoContext";
+import { fetchRepoOverview } from "@/lib/gitloreApi";
 
 /* ── Pattern data ── */
 interface Pattern {
@@ -105,10 +108,61 @@ const PATTERNS: Pattern[] = [
 ];
 
 const Patterns = () => {
+  const { user } = useAuth();
+  const { target, repoFull, repoReady, repoResolving } = useRepo();
   const [search, setSearch] = useState("");
+  const [repoPrimaryLang, setRepoPrimaryLang] = useState<string | null>(null);
+  const [cachedPatternHits, setCachedPatternHits] = useState(0);
+
+  useEffect(() => {
+    if (!user || !repoReady) {
+      setRepoPrimaryLang(null);
+      setCachedPatternHits(0);
+      return;
+    }
+    let cancelled = false;
+    void fetchRepoOverview(target.owner, target.name, target.branch)
+      .then((o) => {
+        if (cancelled) return;
+        setRepoPrimaryLang(o.language || null);
+        const hits = (o.topAntiPatterns || []).reduce((s, x) => s + x.count, 0);
+        setCachedPatternHits(hits);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRepoPrimaryLang(null);
+          setCachedPatternHits(0);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, repoReady, target.owner, target.name, target.branch]);
+
   const filtered = PATTERNS.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  if (user && repoResolving) {
+    return (
+      <div className="flex min-h-[calc(100vh-56px)] items-center justify-center bg-gitlore-bg px-4">
+        <p className="text-sm text-gitlore-text-secondary">Loading your most recently updated repository…</p>
+      </div>
+    );
+  }
+
+  if (user && !repoReady) {
+    return (
+      <div className="min-h-[calc(100vh-56px)] bg-gitlore-bg px-4 py-12">
+        <div className="mx-auto max-w-[1200px] text-center md:px-8 md:py-12">
+          <h1 className="mb-2 font-heading text-2xl font-bold text-gitlore-text">Pattern Library</h1>
+          <p className="text-sm text-gitlore-text-secondary">
+            Select a repository with the <span className="text-gitlore-text">Repositories</span> search in the header to tie language stats and cached hits to a live repo.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-gitlore-bg">
@@ -116,9 +170,26 @@ const Patterns = () => {
         <h1 className="text-2xl font-heading font-bold text-gitlore-text mb-1">
           Pattern Library
         </h1>
-        <p className="text-sm text-gitlore-text-secondary mb-6">
-          20 code anti-patterns detected automatically
+        <p className="text-sm text-gitlore-text-secondary mb-2">
+          Reference catalog ({PATTERNS.length} templates). Detection counts in cards are demo defaults; your repo is{" "}
+          <span className="font-code text-gitlore-accent">{repoFull || "—"}</span>
+          {repoPrimaryLang ? (
+            <>
+              {" "}
+              (primary language: <span className="font-code">{repoPrimaryLang}</span>)
+            </>
+          ) : null}
+          .
         </p>
+        {user && cachedPatternHits > 0 && (
+          <p className="mb-6 text-xs text-gitlore-text-secondary">
+            Cached AI explanations for this repo recorded{" "}
+            <span className="font-code text-gitlore-accent">{cachedPatternHits}</span> pattern mentions — see Overview for breakdown.
+          </p>
+        )}
+        {!user && (
+          <p className="mb-6 text-xs text-gitlore-text-secondary">Sign in to link stats to your connected repository.</p>
+        )}
 
         {/* Search */}
         <input

@@ -4,6 +4,15 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { serve } from "@hono/node-server";
 import { connectDB } from "./lib/mongo";
+import { authMiddleware } from "./middleware/auth";
+import { authRouter } from "./routes/auth";
+import { analyzeRouter } from "./routes/analyze";
+import { explainRouter } from "./routes/explain";
+import { guardrailsRouter } from "./routes/guardrails";
+import { narrateRouter } from "./routes/narrate";
+import { repoRouter } from "./routes/repo";
+import { realTestRouter } from "./routes/realtest";
+import { searchRouter } from "./routes/search";
 import { testRouter } from "./routes/test";
 
 /** Comma-separated in CORS_ORIGIN; first entry is default for non-browser clients. */
@@ -29,11 +38,22 @@ app.use(
   })
 );
 
+app.route("/auth", authRouter);
 app.route("/test", testRouter);
+app.route("/test", realTestRouter);
 
 app.get("/health", (c) => {
   return c.json({ status: "ok", timestamp: new Date().toISOString() });
 });
+
+app.use("/api/*", authMiddleware);
+
+app.route("/api", explainRouter);
+app.route("/api", analyzeRouter);
+app.route("/api", searchRouter);
+app.route("/api", narrateRouter);
+app.route("/api", guardrailsRouter);
+app.route("/api", repoRouter);
 
 app.notFound((c) => {
   return c.json({ error: "Not found" }, 404);

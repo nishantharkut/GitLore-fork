@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
 import { BlurReveal } from "../effects/BlurReveal";
+import { ConnectGithubCta } from "../ConnectGithubCta";
 import { Magnet } from "../effects/Magnet";
 import { SplitText } from "../effects/SplitText";
 import { TextScramble } from "../effects/TextScramble";
@@ -63,12 +63,9 @@ const HeroSection = () => {
 
             <div className="mt-8 flex flex-wrap gap-3">
               <Magnet strength={0.2}>
-                <Link
-                  to="/app"
-                  className="inline-flex h-11 items-center rounded-[4px] bg-[var(--accent)] px-6 font-heading text-[13px] font-medium text-white transition-[filter] duration-200 hover:brightness-110"
-                >
+                <ConnectGithubCta className="inline-flex h-11 items-center rounded-[4px] bg-[var(--accent)] px-6 font-heading text-[13px] font-medium text-white transition-[filter] duration-200 hover:brightness-110">
                   Connect GitHub Repo
-                </Link>
+                </ConnectGithubCta>
               </Magnet>
               <a
                 href="#live-demo"

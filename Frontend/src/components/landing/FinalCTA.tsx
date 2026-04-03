@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
 import { FadeIn } from "../effects/FadeIn";
+import { ConnectGithubCta } from "../ConnectGithubCta";
 import { SplitText } from "../effects/SplitText";
 
 const FinalCTA = () => {
@@ -14,12 +14,9 @@ const FinalCTA = () => {
             Start reading them.
           </SplitText>
         </h2>
-        <Link
-          to="/app"
-          className="mt-10 inline-flex h-11 items-center rounded-[4px] bg-[var(--accent)] px-6 font-heading text-[13px] font-medium text-white transition-[filter] duration-200 hover:brightness-110"
-        >
+        <ConnectGithubCta className="mt-10 inline-flex h-11 items-center rounded-[4px] bg-[var(--accent)] px-6 font-heading text-[13px] font-medium text-white transition-[filter] duration-200 hover:brightness-110">
           Connect GitHub Repo
-        </Link>
+        </ConnectGithubCta>
         <p className="mt-3 font-body text-[12px] font-normal tracking-[-0.01em] text-[var(--text-ghost)]">
           Free to use · Works on any public repo
         </p>

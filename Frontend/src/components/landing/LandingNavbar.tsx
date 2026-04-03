@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { GuardrailsModal } from "../GuardrailsModal";
+import { ConnectGithubCta } from "../ConnectGithubCta";
 
 const LandingNavbar = () => {
   const navRef = useRef<HTMLElement>(null);
@@ -46,13 +47,10 @@ const LandingNavbar = () => {
           >
             Guardrails
           </button>
-          <Link
-            to="/app"
-            className="nav-btn inline-flex h-[34px] items-center rounded-[6px] bg-[var(--accent)] px-4 font-heading text-[13px] font-medium text-white sm:px-4"
-          >
+          <ConnectGithubCta className="nav-btn inline-flex h-[34px] items-center rounded-[6px] bg-[var(--accent)] px-4 font-heading text-[13px] font-medium text-white sm:px-4">
             <span className="md:hidden">Connect</span>
             <span className="hidden md:inline">Connect Repo</span>
-          </Link>
+          </ConnectGithubCta>
         </div>
       </nav>
       {guardrailsOpen && <GuardrailsModal onClose={() => setGuardrailsOpen(false)} />}

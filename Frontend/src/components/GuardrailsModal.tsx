@@ -1,28 +1,26 @@
 import { useState, useRef, useEffect } from "react";
 import gsap from "gsap";
 import { animate } from "animejs";
+import { fetchGuardrails, testGuardrailAction } from "@/lib/gitloreApi";
 
-const ALLOWED = [
-  "Analyze public repos",
-  "Generate narratives",
-  "Explain review comments",
-  "Search similar decisions",
-  "Generate voice narration",
+const FALLBACK_ALLOWED = [
+  "analyze_public_repo",
+  "generate_narrative",
+  "explain_review_comment",
+  "search_similar_decisions",
 ];
 
-const BLOCKED = [
-  "Access private repos without auth",
-  "Modify code",
-  "Post comments on behalf of user",
-  "Generate medical/legal advice",
-  "Access user credentials",
+const FALLBACK_BLOCKED = [
+  "access_private_repo_without_auth",
+  "modify_code",
+  "post_comments_on_behalf_of_user",
 ];
-
-const BLOCKED_KEYWORDS = ["modify", "delete", "access credentials", "post comment", "private repo", "medical", "legal"];
 
 export const GuardrailsModal = ({ onClose }: { onClose: () => void }) => {
   const [testInput, setTestInput] = useState("");
   const [result, setResult] = useState<{ type: "allowed" | "blocked"; text: string } | null>(null);
+  const [allowed, setAllowed] = useState<string[]>(FALLBACK_ALLOWED);
+  const [blocked, setBlocked] = useState<string[]>(FALLBACK_BLOCKED);
   const modalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -32,30 +30,47 @@ export const GuardrailsModal = ({ onClose }: { onClose: () => void }) => {
     }
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const g = await fetchGuardrails();
+        if (cancelled) return;
+        if (g.allowed?.length) setAllowed(g.allowed);
+        if (g.blocked?.length) setBlocked(g.blocked);
+      } catch {
+        /* keep fallback lists */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleCheck = () => {
     if (!testInput.trim()) return;
-    const lower = testInput.toLowerCase();
-    const isBlocked = BLOCKED_KEYWORDS.some((kw) => lower.includes(kw));
-
-    if (isBlocked) {
-      setResult({ type: "blocked", text: `BLOCKED: ${testInput} violates security policy` });
-      if (inputRef.current) {
-        animate(inputRef.current, {
-          borderColor: ["rgba(255,255,255,0.1)", "#F87171", "rgba(255,255,255,0.1)"],
-          duration: 600,
-          ease: "outQuad",
+    void (async () => {
+      try {
+        const res = await testGuardrailAction(testInput.trim());
+        const ok = res.allowed;
+        setResult({
+          type: ok ? "allowed" : "blocked",
+          text: res.reason || (ok ? "Allowed" : "Blocked"),
+        });
+        if (inputRef.current) {
+          animate(inputRef.current, {
+            borderColor: ["rgba(255,255,255,0.1)", ok ? "#34D399" : "#F87171", "rgba(255,255,255,0.1)"],
+            duration: 600,
+            ease: "outQuad",
+          });
+        }
+      } catch (e) {
+        setResult({
+          type: "blocked",
+          text: e instanceof Error ? e.message : "Check failed (are you signed in?)",
         });
       }
-    } else {
-      setResult({ type: "allowed", text: `AUTHORIZED: ${testInput}` });
-      if (inputRef.current) {
-        animate(inputRef.current, {
-          borderColor: ["rgba(255,255,255,0.1)", "#34D399", "rgba(255,255,255,0.1)"],
-          duration: 600,
-          ease: "outQuad",
-        });
-      }
-    }
+    })();
   };
 
   return (
@@ -83,10 +98,10 @@ export const GuardrailsModal = ({ onClose }: { onClose: () => void }) => {
               <span className="text-sm font-medium text-gitlore-text">Allowed</span>
             </div>
             <ul className="space-y-2">
-              {ALLOWED.map((item) => (
+              {allowed.map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm leading-snug text-gitlore-text-secondary">
                   <span className="shrink-0 text-gitlore-success">{"\u2713"}</span>
-                  {item}
+                  <span className="font-code text-[13px]">{item}</span>
                 </li>
               ))}
             </ul>
@@ -97,10 +112,10 @@ export const GuardrailsModal = ({ onClose }: { onClose: () => void }) => {
               <span className="text-sm font-medium text-gitlore-text">Blocked</span>
             </div>
             <ul className="space-y-2">
-              {BLOCKED.map((item) => (
+              {blocked.map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm leading-snug text-gitlore-text-secondary">
                   <span className="shrink-0 text-gitlore-error">{"\u2717"}</span>
-                  {item}
+                  <span className="font-code text-[13px]">{item}</span>
                 </li>
               ))}
             </ul>
@@ -111,7 +126,7 @@ export const GuardrailsModal = ({ onClose }: { onClose: () => void }) => {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Test an action..."
+            placeholder="e.g. generate_narrative or modify_code"
             value={testInput}
             onChange={(e) => {
               setTestInput(e.target.value);
