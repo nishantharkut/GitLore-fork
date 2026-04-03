@@ -16,7 +16,9 @@
     "@hono/node-server": "^1.0.0",
     "mongodb": "^6.3.0",
     "@octokit/graphql": "^7.0.0",
-    "zod": "^3.22.0"
+    "zod": "^3.22.0",
+    "zod-to-json-schema": "^3.22.0",
+    "@google/generative-ai": "^0.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

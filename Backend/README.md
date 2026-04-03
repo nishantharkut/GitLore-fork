@@ -1,8 +1,8 @@
 # GitLore Backend
 
-Hono + MongoDB API, merged in small PRs. This commit adds protected repository REST helpers (`/api/repo/*`, `/api/repos/*`), guardrails, and narrate (placeholder).
+Hono + MongoDB API for GitLore. This commit completes the backend stack: `POST /api/analyze`, `/api/explain`, `/api/search` (Gemini + embeddings), plus `/test/real-*` helpers.
 
-Earlier PRs in this stack: foundation (`/health`, `/test/*`) and GitHub OAuth (`/auth/*`). Next PR adds analyze, explain, and search (Gemini).
+Set `GEMINI_API_KEY` in `.env` for AI routes. Prior PRs in this stack added foundation, OAuth, and repository/guardrails/narrate routes.
 
 ## Run
 
@@ -12,4 +12,4 @@ npm install
 cp .env.example .env
 ```
 
-Configure OAuth and MongoDB as in `.env.example`. With a valid session cookie, `GET /api/repo/:owner/:name` and related routes are available.
+Fill all variables in `.env.example`, then `npm run dev` (default port `3001`).
