@@ -9,6 +9,8 @@
   },
   "scripts": {
     "dev": "tsx --watch src/server.ts",
+    "test": "node test-backend.js",
+    "test:full": "node test-full.js",
     "build": "tsc",
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit"
@@ -17,11 +19,11 @@
     "dotenv": "^16.3.1",
     "hono": "^4.0.0",
     "@hono/node-server": "^1.0.0",
+    "@google/generative-ai": "^0.3.0",
     "mongodb": "^6.3.0",
     "@octokit/graphql": "^7.0.0",
     "zod": "^3.22.0",
-    "zod-to-json-schema": "^3.22.0",
-    "@google/generative-ai": "^0.3.0"
+    "zod-to-json-schema": "^3.22.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
