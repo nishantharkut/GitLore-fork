@@ -3,12 +3,10 @@ import { getDB } from "./mongo";
 import {
   getEmbedding,
   GEMINI_GENERATION_MODEL,
+  getGoogleGenAI,
   withGemini429Retry,
 } from "./gemini";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export const knowledgeNodeSchema = z.object({
   type: z.enum([
@@ -204,7 +202,7 @@ function cleanJsonString(jsonStr: string): string {
 }
 
 export async function extractKnowledge(pr: any): Promise<KnowledgeNode> {
-  const model = genAI.getGenerativeModel({ model: GEMINI_GENERATION_MODEL });
+  const ai = getGoogleGenAI();
 
   const reviewNodes = (pr.reviews?.nodes || []).filter((r: any) => r.body?.trim()).slice(0, 10);
   const reviews = reviewNodes
@@ -267,11 +265,12 @@ Rules:
 - Topics should be 2-5 short tags (e.g., "auth", "api-design", "database", "testing").
 - Be concise.`;
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+  const result = await ai.models.generateContent({
+    model: GEMINI_GENERATION_MODEL,
+    contents: prompt,
   });
 
-  const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text;
+  const responseText = result.text;
   if (!responseText) {
     throw new Error("Empty Gemini response");
   }

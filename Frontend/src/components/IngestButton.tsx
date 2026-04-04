@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Brain, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { useRepo } from "@/context/RepoContext";
+import { useToast } from "@/context/ToastContext";
 import { postJSON, getJSON } from "@/lib/gitloreApi";
 
 export function IngestButton({ onComplete }: { onComplete?: () => void }) {
   const { target, repoReady } = useRepo();
+  const { toast } = useToast();
+  const prevStatus = useRef<"idle" | "running" | "done" | "error">("idle");
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
   const [processed, setProcessed] = useState(0);
   const [failed, setFailed] = useState(0);
@@ -12,6 +15,16 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
   const [nodeCount, setNodeCount] = useState(0);
   const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (prevStatus.current === "running" && status === "done") {
+      toast({
+        message: `Knowledge Graph built — ${nodeCount} decision${nodeCount === 1 ? "" : "s"} found`,
+        type: "success",
+      });
+    }
+    prevStatus.current = status;
+  }, [status, nodeCount, toast]);
 
   // Check if already ingested on mount
   useEffect(() => {
@@ -92,6 +105,7 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
       }
     } catch (err) {
       setStatus("error");
+      toast({ message: "Ingest failed — check API key", type: "error" });
       console.error("Ingest error:", err);
     }
   };

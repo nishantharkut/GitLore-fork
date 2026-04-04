@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getDB } from "../lib/mongo";
 import { getCurrentUser } from "../middleware/auth";
 import {
   GEMINI_GENERATION_MODEL,
+  getGoogleGenAI,
   isGeminiApiKeyError,
   isGeminiRateLimitError,
   withGemini429Retry,
@@ -17,8 +17,6 @@ import {
   runKnowledgeSearch,
 } from "../lib/knowledgeSearch";
 import { agenticKnowledgeChat } from "../lib/gemini-agent";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 /** Model for knowledge-graph Q&A (override via GEMINI_CHAT_MODEL; else GEMINI_GENERATION_MODEL / default). */
 const GEMINI_CHAT_MODEL =
@@ -218,14 +216,13 @@ Instructions: Answer using only the nodes above. Be specific and well structured
           const modelName = chatModelChain[i];
           const isLast = i === chatModelChain.length - 1;
           try {
-            const mdl = genAI.getGenerativeModel({
-              model: modelName,
-              systemInstruction: systemPreamble,
-            } as Parameters<typeof genAI.getGenerativeModel>[0]);
+            const ai = getGoogleGenAI();
             const run = () =>
-              mdl.generateContent({
-                contents: [{ role: "user", parts: [{ text: userMsg }] }],
-                generationConfig: {
+              ai.models.generateContent({
+                model: modelName,
+                contents: userMsg,
+                config: {
+                  systemInstruction: systemPreamble,
                   maxOutputTokens: 4096,
                   temperature: 0.42,
                   topP: 0.92,
@@ -236,8 +233,7 @@ Instructions: Answer using only the nodes above. Be specific and well structured
               ? await withGemini429Retry(run, { maxRetries: 2 })
               : await run();
             const text =
-              result.response.candidates?.[0]?.content?.parts?.[0]?.text ||
-              "Unable to generate a synthesized answer.";
+              result.text || "Unable to generate a synthesized answer.";
             geminiResult = { text, model: modelName };
             break;
           } catch (e) {

@@ -4,6 +4,7 @@ import gsap from "gsap";
 import { animate as animeAnimate } from "animejs";
 import { Group, Panel, Separator, useDefaultLayout, useGroupRef } from "react-resizable-panels";
 import { Link, useNavigate, useLocation } from "react-router-dom";
+import { WrapText } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
@@ -38,8 +39,21 @@ const AppViewCodeEditor = lazy(() => import("./AppViewCodeEditor"));
 const FALLBACK_CODE = `// Select a file in the tree or set owner/repo/branch in the bar above.
 // File list is loaded from GitHub (GET /api/repo/.../index).`;
 
-function getBlame(_line: number): string {
-  return "Git blame \u00b7 use Analyze on a line for real history";
+function truncBlameText(s: string, n: number): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length <= n ? t : `${t.slice(0, n - 1)}…`;
+}
+
+function compactBlameFromNarrative(data: InsightNarrative): string {
+  const t = data.timeline[0];
+  if (!t) return "Git blame · analyze line";
+  const author = (t.sublabel || "").trim() || "?";
+  const when = (t.date || "").trim();
+  const msg = (t.label || "").replace(/\s+/g, " ").trim();
+  const parts: string[] = [author];
+  if (when) parts.push(when);
+  if (msg) parts.push(truncBlameText(msg, 14));
+  return truncBlameText(parts.join(" · "), 32);
 }
 
 type DiffLine = ParsedDiffLine;
@@ -328,7 +342,7 @@ const TIMELINE_FONT = 'Inter, system-ui, sans-serif';
 
 const StoryTimeline = ({ dots }: { dots: TimelineDot[] }) => {
   const svgRef = useRef<SVGSVGElement>(null);
-  const containerWidth = 320;
+  const containerWidth = 600;
   const dotR = 6;
   const spacing = dots.length > 1 ? (containerWidth - 40) / (dots.length - 1) : 0;
 
@@ -342,23 +356,23 @@ const StoryTimeline = ({ dots }: { dots: TimelineDot[] }) => {
   }, []);
 
   return (
-    <div className="-mx-1 overflow-x-auto px-1">
-      <svg ref={svgRef} viewBox={`0 0 ${containerWidth} 100`} className="block w-full max-w-[520px]" preserveAspectRatio="xMidYMid meet">
+    <div className="-mx-1 min-h-[100px] overflow-x-auto px-1" style={{ minWidth: 280 }}>
+      <svg ref={svgRef} viewBox={`0 0 ${containerWidth} 100`} className="block w-full" preserveAspectRatio="xMidYMid meet">
         {dots.length > 1 && (
-          <line x1={20} y1={20} x2={20 + spacing * (dots.length - 1)} y2={20} stroke="#2A2A3A" strokeWidth={2} />
+          <line x1={20} y1={24} x2={20 + spacing * (dots.length - 1)} y2={24} stroke="#2A2A3A" strokeWidth={2} />
         )}
         {dots.map((dot, i) => {
           const cx = dots.length > 1 ? 20 + i * spacing : containerWidth / 2;
           return (
             <g key={i}>
-              <circle className="timeline-dot" cx={cx} cy={20} r={dotR} fill={dot.color} />
-              <text x={cx} y={42} textAnchor="middle" fill="var(--text)" fontSize={12} fontFamily={TIMELINE_FONT} fontWeight={500}>
+              <circle className="timeline-dot" cx={cx} cy={24} r={dotR} fill={dot.color} />
+              <text x={cx} y={48} textAnchor="middle" fill="var(--text)" fontSize={12} fontFamily={TIMELINE_FONT} fontWeight={500}>
                 {dot.label}
               </text>
-              <text x={cx} y={56} textAnchor="middle" fill="var(--text-secondary)" fontSize={11} fontFamily={TIMELINE_FONT}>
+              <text x={cx} y={64} textAnchor="middle" fill="var(--text-secondary)" fontSize={11} fontFamily={TIMELINE_FONT}>
                 {dot.sublabel}
               </text>
-              <text x={cx} y={70} textAnchor="middle" fill="var(--text-secondary)" fontSize={11} fontFamily={TIMELINE_FONT} fontStyle="italic">
+              <text x={cx} y={78} textAnchor="middle" fill="var(--text-secondary)" fontSize={11} fontFamily={TIMELINE_FONT} fontStyle="italic">
                 {dot.date}
               </text>
             </g>
@@ -708,7 +722,13 @@ const AppView = () => {
   const [treeError, setTreeError] = useState<string | null>(null);
   const [sourceCode, setSourceCode] = useState(FALLBACK_CODE);
   const [fileLoading, setFileLoading] = useState(false);
-  const [mobileCodeWrap, setMobileCodeWrap] = useState(true);
+  const [codeWrap, setCodeWrap] = useState(() => {
+    try {
+      return localStorage.getItem("gitlore-code-wrap") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [pulls, setPulls] = useState<RepoPullSummary[]>([]);
   const [selectedPrNumber, setSelectedPrNumber] = useState<number | null>(null);
   const [prListLoading, setPrListLoading] = useState(false);
@@ -768,6 +788,11 @@ const AppView = () => {
     prHeadRef,
     target.branch,
   ]);
+
+  useEffect(() => {
+    if (authLoading || !user || repoReady) return;
+    navigate("/repos", { replace: true });
+  }, [authLoading, user, repoReady, navigate]);
 
   useEffect(() => {
     const t = panel.type;
@@ -1220,7 +1245,12 @@ const AppView = () => {
   }, []);
 
   const codeLines = sourceCode.split("\n");
-  const blameLines = codeLines.map((_, i) => getBlame(i + 1));
+  const blamePlaceholderShort = "Git blame · analyze line";
+  const blameLines = codeLines.map((_, i) => {
+    const ln = i + 1;
+    if (panel.type === "narrative" && panel.line === ln) return compactBlameFromNarrative(panel.data);
+    return blamePlaceholderShort;
+  });
 
   const panelUI =
     insightLoading ? (
@@ -1304,9 +1334,10 @@ const AppView = () => {
         return (
           <div
             key={i}
-            className={`px-2 whitespace-nowrap transition-colors ${blameRowClass} ${isActive ? "bg-gitlore-accent/8" : ""}`}
+            title={showText && blame ? blame : undefined}
+            className={`overflow-hidden text-ellipsis whitespace-nowrap px-2 transition-colors ${blameRowClass} ${isActive ? "bg-gitlore-accent/8" : ""}`}
           >
-            <span className="font-code text-gitlore-text-secondary/50 max-md:text-[13px]">{showText ? blame : ""}</span>
+            <span className="block truncate font-code text-gitlore-text-secondary/50 max-md:text-[13px]">{showText ? blame : ""}</span>
           </div>
         );
       })}
@@ -1314,7 +1345,12 @@ const AppView = () => {
   );
 
 
-  const selectedBlame = selectedLine ? getBlame(selectedLine) : null;
+  const selectedBlame =
+    selectedLine == null
+      ? null
+      : panel.type === "narrative" && panel.line === selectedLine
+        ? compactBlameFromNarrative(panel.data)
+        : blamePlaceholderShort;
 
   const codeEditor = (
     <Suspense fallback={<CodeEditorSkeleton mobile={isMobile} />}>
@@ -1322,7 +1358,7 @@ const AppView = () => {
         value={sourceCode}
         filePath={target.filePath || ""}
         isMobile={isMobile}
-        mobileCodeWrap={mobileCodeWrap}
+        mobileCodeWrap={codeWrap}
         fileLoading={fileLoading}
         selectedLine={selectedLine}
         onLineActivate={(line) => void handleLineClickAnime(line)}
@@ -1495,6 +1531,24 @@ const AppView = () => {
             Reset layout
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            const next = !codeWrap;
+            try {
+              localStorage.setItem("gitlore-code-wrap", next ? "true" : "false");
+            } catch {
+              /* ignore */
+            }
+            setCodeWrap(next);
+          }}
+          className={`hidden shrink-0 md:inline-flex h-8 w-8 items-center justify-center rounded-sm border border-gitlore-border text-gitlore-text-secondary transition-colors hover:bg-gitlore-surface-hover hover:text-gitlore-text ${codeWrap ? "border-gitlore-accent/60 text-gitlore-accent" : ""}`}
+          title={codeWrap ? "Disable line wrap" : "Wrap long lines"}
+          aria-pressed={codeWrap}
+          aria-label={codeWrap ? "Disable line wrap" : "Wrap long lines"}
+        >
+          <WrapText className="h-4 w-4 shrink-0" aria-hidden />
+        </button>
         <div className="min-w-0 flex-1" />
         <span className="hidden truncate px-3 py-2 font-code text-sm text-gitlore-text-secondary md:block md:max-lg:text-xs">
           {target.filePath || "— no file selected —"}
@@ -1723,15 +1777,29 @@ const AppView = () => {
                     <div className="ml-auto flex rounded-sm border border-gitlore-border p-0.5 font-code text-[10px] font-medium">
                       <button
                         type="button"
-                        onClick={() => setMobileCodeWrap(true)}
-                        className={`rounded-[2px] px-2 py-1 transition-colors ${mobileCodeWrap ? "bg-gitlore-accent/20 text-gitlore-accent" : "text-gitlore-text-secondary hover:text-gitlore-text"}`}
+                        onClick={() => {
+                          try {
+                            localStorage.setItem("gitlore-code-wrap", "true");
+                          } catch {
+                            /* ignore */
+                          }
+                          setCodeWrap(true);
+                        }}
+                        className={`rounded-[2px] px-2 py-1 transition-colors ${codeWrap ? "bg-gitlore-accent/20 text-gitlore-accent" : "text-gitlore-text-secondary hover:text-gitlore-text"}`}
                       >
                         Wrap
                       </button>
                       <button
                         type="button"
-                        onClick={() => setMobileCodeWrap(false)}
-                        className={`rounded-[2px] px-2 py-1 transition-colors ${!mobileCodeWrap ? "bg-gitlore-accent/20 text-gitlore-accent" : "text-gitlore-text-secondary hover:text-gitlore-text"}`}
+                        onClick={() => {
+                          try {
+                            localStorage.setItem("gitlore-code-wrap", "false");
+                          } catch {
+                            /* ignore */
+                          }
+                          setCodeWrap(false);
+                        }}
+                        className={`rounded-[2px] px-2 py-1 transition-colors ${!codeWrap ? "bg-gitlore-accent/20 text-gitlore-accent" : "text-gitlore-text-secondary hover:text-gitlore-text"}`}
                       >
                         No wrap
                       </button>
@@ -1799,7 +1867,7 @@ const AppView = () => {
                           groupRef={blameGroupRef}
                         >
                         <Panel id="blame" defaultSize="15%" minSize="11%" maxSize="34%" className="min-h-0 min-w-0">
-                          <div className="flex h-full min-h-0 select-none flex-col overflow-hidden border-r border-gitlore-border bg-gitlore-code">
+                          <div className="flex h-full min-h-0 w-[140px] min-w-0 select-none flex-col overflow-hidden border-l border-gitlore-border/30 border-r border-gitlore-border bg-gitlore-code md:w-[200px] md:min-w-[160px] md:max-w-[240px]">
                             {blameColumn}
                           </div>
                         </Panel>

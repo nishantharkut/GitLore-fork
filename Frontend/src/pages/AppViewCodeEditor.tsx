@@ -48,7 +48,7 @@ export default function AppViewCodeEditor({
   const cmExtensions = useMemo(
     () => [
       ...cmExtensionsForPath(filePath || "", isMobile, mobileCodeWrap, appTheme),
-      ...(isMobile && mobileCodeWrap ? [EditorView.lineWrapping] : []),
+      ...(mobileCodeWrap ? [EditorView.lineWrapping] : []),
       ...extraExtensionsList,
     ],
     [filePath, isMobile, mobileCodeWrap, appTheme, extraExtensionsList]
@@ -85,7 +85,7 @@ export default function AppViewCodeEditor({
       )}
       <CodeMirror
         value={value}
-        key={`${filePath}-${appTheme}-${isMobile ? `m-${mobileCodeWrap ? "wrap" : "nowrap"}` : "d"}`}
+        key={`${filePath}-${appTheme}-${mobileCodeWrap ? "wrap" : "nowrap"}`}
         theme="none"
         extensions={cmExtensions}
         editable={false}

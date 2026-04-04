@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import gsap from "gsap";
 import { animate } from "animejs";
 import { fetchGuardrails, testGuardrailAction } from "@/lib/gitloreApi";
+import { useToast } from "@/context/ToastContext";
 
 const FALLBACK_ALLOWED = [
   "analyze_public_repo",
@@ -17,6 +18,7 @@ const FALLBACK_BLOCKED = [
 ];
 
 export const GuardrailsModal = ({ onClose }: { onClose: () => void }) => {
+  const { toast } = useToast();
   const [testInput, setTestInput] = useState("");
   const [result, setResult] = useState<{ type: "allowed" | "blocked"; text: string } | null>(null);
   const [allowed, setAllowed] = useState<string[]>(FALLBACK_ALLOWED);
@@ -57,6 +59,9 @@ export const GuardrailsModal = ({ onClose }: { onClose: () => void }) => {
           type: ok ? "allowed" : "blocked",
           text: res.reason || (ok ? "Allowed" : "Blocked"),
         });
+        if (!ok) {
+          toast({ message: "Action blocked by security policy", type: "error" });
+        }
         if (inputRef.current) {
           animate(inputRef.current, {
             borderColor: ["rgba(255,255,255,0.1)", ok ? "#34D399" : "#F87171", "rgba(255,255,255,0.1)"],

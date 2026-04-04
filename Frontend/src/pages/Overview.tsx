@@ -36,7 +36,7 @@ function fmt(n: number) {
 
 const Overview = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { target, repoFull, setTarget, repoReady } = useRepo();
   const [data, setData] = useState<RepoOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,6 +53,11 @@ const Overview = () => {
 
   const { events: liveEvents, connected: liveConnected, streamError: liveStreamErr, clearEvents } =
     useRealtimeUpdates(repoReady ? repoFull : null);
+
+  useEffect(() => {
+    if (authLoading || !user || repoReady) return;
+    navigate("/repos", { replace: true });
+  }, [authLoading, user, repoReady, navigate]);
 
   useEffect(() => {
     if (!user) {

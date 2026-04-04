@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { SearchBar } from "@/components/Navbar";
 import { Spinner } from "@/components/Skeleton";
 import { useRepo } from "@/context/RepoContext";
+import { useToast } from "@/context/ToastContext";
 import { fetchMyRepos, type GithubRepoSummary } from "@/lib/gitloreApi";
 
 const PAGE_SIZE = 12;
@@ -19,6 +20,7 @@ function fmtUpdated(iso: string | null) {
 const RepoSelect = () => {
   const navigate = useNavigate();
   const { selectRepository } = useRepo();
+  const { toast } = useToast();
   const [repos, setRepos] = useState<GithubRepoSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -62,6 +64,7 @@ const RepoSelect = () => {
 
   const onPick = (r: GithubRepoSummary) => {
     selectRepository(r.owner, r.name, r.defaultBranch);
+    toast({ message: `Repository selected: ${r.fullName}`, type: "success" });
     navigate("/overview");
   };
 

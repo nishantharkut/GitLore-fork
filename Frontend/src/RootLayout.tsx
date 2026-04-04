@@ -4,6 +4,7 @@ import Navbar from "./components/Navbar";
 import { PostAuthRedirect } from "./components/PostAuthRedirect";
 import { NavigationLoadingOverlay, NavigationProgress, RoutePendingFallback } from "./components/PageTransitions";
 import { RouteTransitionGateProvider, useShowRouteTransitionChrome } from "./context/RouteTransitionGate";
+import { ToastProvider } from "./context/ToastContext";
 
 function MainChrome() {
   const location = useLocation();
@@ -33,7 +34,9 @@ function MainChrome() {
 export function RootLayout() {
   return (
     <RouteTransitionGateProvider>
-      <MainChrome />
+      <ToastProvider>
+        <MainChrome />
+      </ToastProvider>
     </RouteTransitionGateProvider>
   );
 }

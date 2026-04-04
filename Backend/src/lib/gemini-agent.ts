@@ -1,7 +1,6 @@
 /**
  * Reasoning layer: Gemini builds a tool plan; ArmorClaw enforces; tools execute.
  */
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { Db } from "mongodb";
 import {
   createEnforcementLayer,
@@ -20,10 +19,13 @@ import {
 } from "./knowledgeSearch";
 import { createGithubClient, getBlameForLine, getIssue, getPullRequest, getRepositoryInfo } from "./github";
 import { enrichRepositoryOverview, getRepoFileContent } from "./githubRest";
-import { getEmbedding, GEMINI_GENERATION_MODEL, withGemini429Retry } from "./gemini";
+import {
+  getEmbedding,
+  GEMINI_GENERATION_MODEL,
+  getGoogleGenAI,
+  withGemini429Retry,
+} from "./gemini";
 import { ingestRepo } from "./ingest";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 const TOOL_MANUAL = `
 Available tools (use exact names):
@@ -85,23 +87,22 @@ ${question}
 
 Return the JSON plan now.`;
 
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction: sys,
-  } as Parameters<typeof genAI.getGenerativeModel>[0]);
+  const ai = getGoogleGenAI();
 
   const res = await withGemini429Retry(() =>
-    model.generateContent({
-      contents: [{ role: "user", parts: [{ text: user }] }],
-      generationConfig: {
+    ai.models.generateContent({
+      model: modelName,
+      contents: user,
+      config: {
+        systemInstruction: sys,
         temperature: 0.2,
         maxOutputTokens: 2048,
         responseMimeType: "application/json",
-      } as Record<string, unknown>,
+      },
     })
   );
 
-  const text = res.response.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+  const text = res.text || "{}";
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -309,16 +310,15 @@ ${question}
 
 Write a clear, structured answer in markdown-friendly plain text.`;
 
-  const synthModel = genAI.getGenerativeModel({ model: GEMINI_GENERATION_MODEL });
+  const ai = getGoogleGenAI();
   const synthRes = await withGemini429Retry(() =>
-    synthModel.generateContent({
-      contents: [{ role: "user", parts: [{ text: synthPrompt }] }],
-      generationConfig: { temperature: 0.35, maxOutputTokens: 4096 },
+    ai.models.generateContent({
+      model: GEMINI_GENERATION_MODEL,
+      contents: synthPrompt,
+      config: { temperature: 0.35, maxOutputTokens: 4096 },
     })
   );
-  let answer =
-    synthRes.response.candidates?.[0]?.content?.parts?.[0]?.text ||
-    "Unable to synthesize an answer.";
+  let answer = synthRes.text || "Unable to synthesize an answer.";
   answer += ingestNote;
 
   const sources = usedNodes.map((x) => ({

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import gsap from "gsap";
 import { ChevronDown, ExternalLink, Menu, Moon, Sun, User, X } from "lucide-react";
 import { GuardrailsModal } from "./GuardrailsModal";
+import { Spinner } from "@/components/Skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -16,8 +17,6 @@ import {
 } from "@/lib/gitloreApi";
 import { startGithubOAuth } from "@/lib/githubOAuth";
 
-type SearchHit = { text: string; score: number };
-
 type SearchMode = "repos" | "decisions";
 
 function parseDecisionSource(source: string | undefined): { filePath: string; line: number } | null {
@@ -29,6 +28,20 @@ function parseDecisionSource(source: string | undefined): { filePath: string; li
   return { filePath: m[2], line };
 }
 
+/** `owner/repo:path#Ln` → `path:Ln` for result badges */
+function formatDecisionLocationBadge(source: string | undefined): string | null {
+  if (!source) return null;
+  const m = source.match(/^[^:]+:(.+)#L(\d+)$/);
+  if (!m) return null;
+  return `${m[1]}:L${m[2]}`;
+}
+
+function scoreBadgeClass(score: number): string {
+  if (score > 70) return "bg-emerald-500/15 text-emerald-300 border-emerald-500/35";
+  if (score >= 40) return "bg-amber-500/15 text-amber-200 border-amber-500/35";
+  return "bg-gitlore-border/40 text-gitlore-text-secondary border-gitlore-border/60";
+}
+
 export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -36,12 +49,22 @@ export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
   const [mode, setMode] = useState<SearchMode>("repos");
   const [query, setQuery] = useState("");
   const [repoResults, setRepoResults] = useState<GithubRepoSummary[]>([]);
-  const [decisionResults, setDecisionResults] = useState<SearchHit[]>([]);
+  const [decisionResults, setDecisionResults] = useState<SearchResultItem[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [deepSearchHint, setDeepSearchHint] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
   const hasText = query.trim().length > 0;
   const prevHasText = useRef(false);
+
+  useEffect(() => {
+    if (!searchLoading) {
+      setDeepSearchHint(false);
+      return;
+    }
+    const t = window.setTimeout(() => setDeepSearchHint(true), 5000);
+    return () => window.clearTimeout(t);
+  }, [searchLoading]);
 
   const runSearch = useCallback(
     async (q: string) => {
@@ -67,7 +90,7 @@ export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
             return;
           }
           const hits = await searchDecisions(repoFull, trimmed, 8);
-          setDecisionResults(hits.map((h) => ({ text: h.text, score: h.score })));
+          setDecisionResults(hits);
           setRepoResults([]);
         }
       } catch (e) {
@@ -112,11 +135,15 @@ export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
     const parsed = parseDecisionSource(hit.source);
     const filePath = hit.filePath ?? parsed?.filePath;
     const line = hit.line ?? parsed?.line;
-    if (!filePath || line == null) return;
     setQuery("");
     setDecisionResults([]);
     setRepoResults([]);
     setSearchError(null);
+    if (!filePath || line == null) {
+      navigate("/overview", { state: { chatQuery: hit.text } });
+      onAfterPick?.();
+      return;
+    }
     setTarget({ filePath });
     navigate("/app", { state: { file: filePath, analyzeLine: line } });
     onAfterPick?.();
@@ -157,22 +184,32 @@ export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
             Decisions
           </button>
         </div>
-        <input
-          type="text"
-          placeholder={
-            !user
-              ? "Sign in to search…"
-              : mode === "repos"
-                ? "Search GitHub repos…"
-                : repoReady
-                  ? `Similar narratives in ${repoFull}…`
-                  : "Pick a repo (Repos tab) first"
-          }
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          disabled={!user || (mode === "decisions" && !repoReady)}
-          className="h-10 w-full min-w-0 rounded-sm border border-gitlore-border bg-gitlore-code px-3 py-2 font-body text-sm text-gitlore-text outline-none transition-colors placeholder:text-gitlore-text-secondary/50 focus:border-gitlore-accent disabled:opacity-60 md:h-9 md:py-0 md:leading-9 md:placeholder:leading-normal"
-        />
+        <div className="relative min-w-0 flex-1">
+          <input
+            type="text"
+            placeholder={
+              !user
+                ? "Sign in to search…"
+                : mode === "repos"
+                  ? "Search GitHub repos…"
+                  : repoReady
+                    ? `Similar narratives in ${repoFull}…`
+                    : "Pick a repo (Repos tab) first"
+            }
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={!user || (mode === "decisions" && !repoReady)}
+            className={`h-10 w-full min-w-0 rounded-sm border border-gitlore-border bg-gitlore-code px-3 py-2 font-body text-sm text-gitlore-text outline-none transition-colors placeholder:text-gitlore-text-secondary/50 focus:border-gitlore-accent disabled:opacity-60 md:h-9 md:py-0 md:leading-9 md:placeholder:leading-normal ${searchLoading ? "pr-9" : ""}`}
+          />
+          {searchLoading && (
+            <span
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 md:top-[18px] md:translate-y-0"
+              aria-hidden
+            >
+              <Spinner className="h-4 w-4" label="Searching" />
+            </span>
+          )}
+        </div>
       </div>
       {hasText && user && (
         <div
@@ -180,9 +217,33 @@ export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
           className="z-[60] mt-1 max-h-[min(50vh,280px)] overflow-y-auto rounded-sm border border-gitlore-border bg-gitlore-surface shadow-lg md:absolute md:left-0 md:right-0 md:top-full md:mt-1 md:max-h-[min(70vh,320px)] md:shadow-xl"
         >
           {searchLoading && (
-            <div className="px-4 py-3 text-sm text-gitlore-text-secondary">Searching…</div>
+            <div className="space-y-3 px-4 py-3">
+              <div className="space-y-2">
+                <div className="h-3 w-full rounded bg-gitlore-border/50 animate-pulse" />
+                <div className="h-3 w-[75%] rounded bg-gitlore-border/50 animate-pulse" />
+                <div className="h-3 w-[50%] rounded bg-gitlore-border/50 animate-pulse" />
+              </div>
+              <p className="text-sm text-gitlore-text-secondary">
+                {deepSearchHint
+                  ? "Deep searching…"
+                  : mode === "decisions"
+                    ? "Searching knowledge graph…"
+                    : "Searching GitHub…"}
+              </p>
+            </div>
           )}
-          {searchError && <div className="px-4 py-3 text-sm text-gitlore-error">{searchError}</div>}
+          {searchError && (
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+              <span className="text-sm text-gitlore-error">{searchError}</span>
+              <button
+                type="button"
+                onClick={() => void runSearch(query)}
+                className="rounded-sm border border-gitlore-border px-2 py-1 font-body text-xs text-gitlore-text transition-colors hover:bg-gitlore-surface-hover"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {!searchLoading &&
             !searchError &&
             mode === "repos" &&
@@ -205,24 +266,32 @@ export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
           {!searchLoading &&
             !searchError &&
             mode === "decisions" &&
-            decisionResults.map((r, i) => (
-              <button
-                key={r.source || `d-${i}`}
-                type="button"
-                onClick={() => onPickDecision(r)}
-                className="search-result flex w-full cursor-pointer flex-col gap-1 rounded-sm px-4 py-3 text-left transition-colors hover:bg-gitlore-surface-hover max-md:border-0 max-md:bg-transparent md:flex-row md:items-start md:gap-3"
-              >
-                <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-gitlore-accent md:mt-1.5" />
-                <span className="min-w-0 flex-1 font-body text-[13px] leading-snug text-gitlore-text">{r.text}</span>
-                <span className="shrink-0 font-code text-[11px] tabular-nums text-gitlore-text-secondary md:pt-0.5">
-                  {r.score}%
-                  {(() => {
-                    const ln = r.line ?? parseDecisionSource(r.source)?.line;
-                    return ln != null ? ` · L${ln}` : "";
-                  })()}
-                </span>
-              </button>
-            ))}
+            decisionResults.map((r, i) => {
+              const locBadge = formatDecisionLocationBadge(r.source);
+              return (
+                <button
+                  key={`${r.source ?? "hit"}-${i}-${r.text.slice(0, 20)}`}
+                  type="button"
+                  onClick={() => onPickDecision(r)}
+                  className="search-result flex w-full cursor-pointer flex-col gap-1.5 rounded-sm px-4 py-3 text-left transition-colors hover:bg-gitlore-surface-hover max-md:border-0 max-md:bg-transparent md:flex-row md:items-start md:gap-3"
+                >
+                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-gitlore-accent md:mt-1.5" />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <span className="block font-body text-[13px] leading-snug text-gitlore-text">{r.text}</span>
+                    {locBadge ? (
+                      <span className="inline-block max-w-full truncate rounded border border-gitlore-border/60 bg-gitlore-code/50 px-1.5 py-0.5 font-code text-[10px] text-gitlore-text-secondary">
+                        {locBadge}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span
+                    className={`shrink-0 rounded border px-1.5 py-0.5 font-code text-[10px] tabular-nums md:mt-0.5 ${scoreBadgeClass(r.score)}`}
+                  >
+                    {r.score}%
+                  </span>
+                </button>
+              );
+            })}
           {!searchLoading && !searchError && mode === "repos" && repoResults.length === 0 && (
             <div className="px-4 py-3 text-sm text-gitlore-text-secondary">No repositories matched. Try another keyword or full name (e.g. facebook/react).</div>
           )}
@@ -230,8 +299,14 @@ export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
             <div className="px-4 py-3 text-sm text-gitlore-text-secondary">Choose a repository under Repositories first.</div>
           )}
           {!searchLoading && !searchError && mode === "decisions" && repoReady && decisionResults.length === 0 && (
-            <div className="px-4 py-3 font-body text-sm leading-relaxed text-gitlore-text-secondary">
-              No indexed line narratives match that query yet. Open <span className="text-gitlore-text">Live repo</span>, click a code line to analyze, then search again for similar decisions.
+            <div className="space-y-2 px-4 py-3 font-body text-sm leading-relaxed text-gitlore-text-secondary">
+              <p>No matching decisions found. Try different keywords or build the Knowledge Graph from Overview.</p>
+              <p>
+                <Link to="/overview" className="text-gitlore-accent underline-offset-2 hover:text-gitlore-accent-hover hover:underline">
+                  Overview → Build Knowledge Graph
+                </Link>{" "}
+                to index PR decisions first.
+              </p>
             </div>
           )}
         </div>

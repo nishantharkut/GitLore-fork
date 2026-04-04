@@ -1,7 +1,9 @@
-import { useState, useRef, useEffect, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Send, Bot, User, ExternalLink, Loader, Sparkles, Trash2 } from "lucide-react";
 import { useRepo } from "@/context/RepoContext";
+import { useToast } from "@/context/ToastContext";
 import { postJSON, fetchChatGraphStatus, type ChatGraphStatusResponse } from "@/lib/gitloreApi";
 import {
   loadChatSessionCache,
@@ -104,6 +106,9 @@ function repoCacheKey(owner: string, name: string): string {
 
 export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = {}) {
   const { target, repoReady } = useRepo();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -157,71 +162,94 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
     });
   }, [messages, loading]);
 
+  const sendChatQuestion = useCallback(
+    async (qRaw: string) => {
+      const q = qRaw.trim();
+      if (!q || loading || !repoReady) return;
+      if (q.length < 5) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "Please ask a slightly longer question (at least 5 characters) so the graph search can match meaningfully.",
+          },
+        ]);
+        return;
+      }
+
+      setMessages((prev) => [...prev, { role: "user", content: q }]);
+      setLoading(true);
+
+      try {
+        const res = (await postJSON(`/api/repo/${target.owner}/${target.name}/chat`, {
+          question: q,
+        })) as {
+          answer: string;
+          sources?: Source[];
+          searchTier?: string;
+          nodesUsed?: number;
+          synthesis?: SynthesisKind;
+          model?: string;
+          geminiConfigured?: boolean;
+          armorAgent?: boolean;
+          enforcementLog?: Array<{ tool: string; action: string; reason: string }>;
+        };
+        if (typeof res.geminiConfigured === "boolean") {
+          setChatStatus((prev) => ({
+            geminiConfigured: res.geminiConfigured!,
+            model: res.model || prev?.model || "gemini-2.5-flash-lite",
+          }));
+        }
+        const armorNote =
+          res.armorAgent && Array.isArray(res.enforcementLog)
+            ? `\n\n---\n_ArmorClaw:_ ${res.enforcementLog.length} policy check(s) — ${res.enforcementLog.filter((e) => e.action === "deny").length} blocked. See **ArmorClaw enforcement** below._`
+            : "";
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: res.answer + armorNote,
+            sources: res.sources,
+            searchTier: res.searchTier,
+            nodesUsed: res.nodesUsed,
+            synthesis: res.synthesis,
+            model: res.model,
+          },
+        ]);
+        if (res.nodesUsed === 0) {
+          toast({
+            message: "No decisions found yet. Build the Knowledge Graph first.",
+            type: "info",
+          });
+        }
+        onChatComplete?.();
+      } catch (err) {
+        const msg =
+          err instanceof Error && /invalid question|5.*2000/i.test(err.message)
+            ? "Use between 5 and 2000 characters for your question."
+            : "Sorry, something went wrong. Try again.";
+        setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+        console.error("Chat error:", err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loading, repoReady, target.owner, target.name, toast, onChatComplete]
+  );
+
+  useEffect(() => {
+    const q = (location.state as { chatQuery?: string } | null)?.chatQuery?.trim();
+    if (!q || !repoReady) return;
+    navigate(location.pathname, { replace: true, state: {} });
+    setInput(q);
+    void sendChatQuestion(q);
+  }, [location.key, location.pathname, navigate, repoReady, sendChatQuestion]);
+
   const handleSend = async () => {
     const q = input.trim();
     if (!q || loading || !repoReady) return;
-    if (q.length < 5) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Please ask a slightly longer question (at least 5 characters) so the graph search can match meaningfully.",
-        },
-      ]);
-      return;
-    }
-
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: q }]);
-    setLoading(true);
-
-    try {
-      const res = (await postJSON(`/api/repo/${target.owner}/${target.name}/chat`, {
-        question: q,
-      })) as {
-        answer: string;
-        sources?: Source[];
-        searchTier?: string;
-        nodesUsed?: number;
-        synthesis?: SynthesisKind;
-        model?: string;
-        geminiConfigured?: boolean;
-        armorAgent?: boolean;
-        enforcementLog?: Array<{ tool: string; action: string; reason: string }>;
-      };
-      if (typeof res.geminiConfigured === "boolean") {
-        setChatStatus((prev) => ({
-          geminiConfigured: res.geminiConfigured!,
-          model: res.model || prev?.model || "gemini-2.5-flash-lite",
-        }));
-      }
-      const armorNote =
-        res.armorAgent && Array.isArray(res.enforcementLog)
-          ? `\n\n---\n_ArmorClaw:_ ${res.enforcementLog.length} policy check(s) — ${res.enforcementLog.filter((e) => e.action === "deny").length} blocked. See **ArmorClaw enforcement** below._`
-          : "";
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: res.answer + armorNote,
-          sources: res.sources,
-          searchTier: res.searchTier,
-          nodesUsed: res.nodesUsed,
-          synthesis: res.synthesis,
-          model: res.model,
-        },
-      ]);
-      onChatComplete?.();
-    } catch (err) {
-      const msg =
-        err instanceof Error && /invalid question|5.*2000/i.test(err.message)
-          ? "Use between 5 and 2000 characters for your question."
-          : "Sorry, something went wrong. Try again.";
-      setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
-      console.error("Chat error:", err);
-    } finally {
-      setLoading(false);
-    }
+    await sendChatQuestion(q);
   };
 
   return (

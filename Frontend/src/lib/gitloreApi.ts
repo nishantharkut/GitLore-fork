@@ -124,7 +124,7 @@ export function narrativeFromAnalyzeApi(raw: Record<string, unknown>): InsightNa
         return {
           color,
           label: `PR #${num}`,
-          sublabel: trunc(title, 36),
+          sublabel: trunc(title, 24),
           date: typeof date === "string" && date !== "open" ? new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : (date === "open" ? "open" : ""),
         };
       }
@@ -135,7 +135,7 @@ export function narrativeFromAnalyzeApi(raw: Record<string, unknown>): InsightNa
         return {
           color,
           label: num ? `Issue #${num}` : trunc(title, 28),
-          sublabel: num ? trunc(title, 36) : "Issue",
+          sublabel: num ? trunc(title, 24) : "Issue",
           date: date ? new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "",
         };
       }
