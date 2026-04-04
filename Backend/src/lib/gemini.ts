@@ -410,6 +410,79 @@ ${clipForPrompt("diff", input.diffHunk, 3500)}`;
   }
 }
 
+const minimalFixSchema = z.object({
+  result: z.enum(["ok", "COMPLEX", "UNCERTAIN"]),
+  new_region: z.string().optional(),
+});
+
+export type MinimalFixInput = {
+  comment: string;
+  filePath: string;
+  language: string;
+  regionStartLine: number;
+  regionEndLine: number;
+  regionSource: string;
+};
+
+/**
+ * Tier-3 auto-fix: minimal edit only. Returns replacement text for the given line range, or refusal.
+ */
+export async function generateMinimalFix(
+  input: MinimalFixInput
+): Promise<
+  { ok: true; newRegion: string } | { ok: false; reason: "complex" | "uncertain" | "error" }
+> {
+  const key = process.env.GEMINI_API_KEY?.trim();
+  if (!key) return { ok: false, reason: "error" };
+
+  const ai = getGoogleGenAI();
+  const sys = `You are a code review auto-fixer. Generate the MINIMAL change to address the review comment.
+
+Rules:
+- Change as FEW lines as possible within the region shown (ideally 1–5 lines).
+- NEVER refactor code outside what the comment asks.
+- NEVER add features beyond the comment.
+- Return JSON only with keys: result ("ok" | "COMPLEX" | "UNCERTAIN"), new_region (string, only when result is "ok").
+- new_region must be the FULL replacement text for lines ${input.regionStartLine}–${input.regionEndLine} inclusive (same number of logical lines as that range, or fewer if deleting lines). Use \\n for newlines inside the string.
+- If the fix needs more than ~15 changed lines or you are not confident, use COMPLEX or UNCERTAIN instead of ok.
+- Do not wrap new_region in markdown fences inside the JSON string.`;
+
+  const prompt = `${sys}
+
+File: ${input.filePath}
+Language: ${input.language}
+Comment: ${JSON.stringify(input.comment)}
+
+Replace lines ${input.regionStartLine}–${input.regionEndLine} (inclusive). Current region:
+---
+${clipForPrompt("region", input.regionSource, 12_000)}
+---
+
+Respond with one JSON object: { "result": "ok"|"COMPLEX"|"UNCERTAIN", "new_region": "..." }`;
+
+  try {
+    const result = await withGemini429Retry(() =>
+      ai.models.generateContent({
+        model: GEMINI_EXPLAIN_MODEL,
+        contents: prompt,
+        config: {
+          ...explainJsonGenerationConfig,
+        },
+      })
+    );
+    const text = result.text?.trim() ?? "";
+    if (!text) return { ok: false, reason: "uncertain" };
+    const parsed = parseModelJson(text, minimalFixSchema);
+    if (parsed.result === "COMPLEX") return { ok: false, reason: "complex" };
+    if (parsed.result === "UNCERTAIN") return { ok: false, reason: "uncertain" };
+    if (!parsed.new_region?.trim()) return { ok: false, reason: "uncertain" };
+    return { ok: true, newRegion: parsed.new_region.replace(/\\n/g, "\n") };
+  } catch (e) {
+    logGeminiFailure("generateMinimalFix", e);
+    return { ok: false, reason: "error" };
+  }
+}
+
 /**
  * Generate narrative for a code line based on git history
  */

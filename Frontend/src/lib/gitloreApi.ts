@@ -274,6 +274,73 @@ export async function explainComment(body: {
   return explanationFromApi(raw);
 }
 
+/** ReviewLens auto-fix (classify + tiered fixes). */
+export type AutoFixClassification = "AUTO_FIXABLE" | "SUGGEST_FIX" | "MANUAL_REVIEW" | "COMPLEX";
+
+export type AutoFixClassifiedRow = {
+  comment_id: number;
+  path: string;
+  line: number;
+  author: string;
+  body: string;
+  classification: AutoFixClassification;
+  score: number;
+  signals: {
+    text_pattern: { category: string; score: number };
+    suggestion_block: { found: boolean; score: number; preview?: string };
+    diff_scope: { estimated_lines: number; score: number };
+    reviewer_type: { is_bot: boolean; score: number };
+    pattern_match: { pattern: string | null; score: number };
+  };
+  fix: {
+    tier: 1 | 2 | 3;
+    tier_label: "extracted" | "rule-based" | "ai-generated";
+    original_code: string;
+    fixed_code: string;
+    description: string;
+    validation: { passed: boolean; warnings: string[] };
+  } | null;
+};
+
+export type AutoFixClassifyResponse = {
+  pr_number: number;
+  total_comments: number;
+  classified: AutoFixClassifiedRow[];
+  summary: {
+    auto_fixable: number;
+    suggest_fix: number;
+    manual_review: number;
+    complex: number;
+  };
+};
+
+export async function postAutoFixClassify(owner: string, name: string, pullNumber: number): Promise<AutoFixClassifyResponse> {
+  return postJSON<AutoFixClassifyResponse>(
+    `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls/${pullNumber}/auto-fix/classify`,
+    {}
+  );
+}
+
+export type AutoFixApplyResponse = {
+  status: string;
+  branch: string;
+  draft_pr: { number: number; url: string; title: string };
+  applied: Array<{ comment_id: number; commit_sha: string; file: string; tier: number }>;
+  failed: Array<{ comment_id: number; reason: string }>;
+};
+
+export async function postAutoFixApply(
+  owner: string,
+  name: string,
+  pullNumber: number,
+  body: { comment_ids: number[]; branch_name?: string }
+): Promise<AutoFixApplyResponse> {
+  return postJSON<AutoFixApplyResponse>(
+    `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls/${pullNumber}/auto-fix/apply`,
+    body
+  );
+}
+
 export interface SearchResultItem {
   text: string;
   score: number;

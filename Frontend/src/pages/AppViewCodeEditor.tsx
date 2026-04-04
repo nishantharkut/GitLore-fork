@@ -10,7 +10,8 @@ export type AppViewCodeEditorProps = {
   value: string;
   filePath: string;
   isMobile: boolean;
-  mobileCodeWrap: boolean;
+  /** When true, enable soft line wrapping (desktop and mobile). */
+  codeWrap: boolean;
   fileLoading: boolean;
   selectedLine: number | null;
   onLineActivate: (line: number) => void;
@@ -27,7 +28,7 @@ export default function AppViewCodeEditor({
   value,
   filePath,
   isMobile,
-  mobileCodeWrap,
+  codeWrap,
   fileLoading,
   selectedLine,
   onLineActivate,
@@ -47,11 +48,11 @@ export default function AppViewCodeEditor({
 
   const cmExtensions = useMemo(
     () => [
-      ...cmExtensionsForPath(filePath || "", isMobile, mobileCodeWrap, appTheme),
-      ...(mobileCodeWrap ? [EditorView.lineWrapping] : []),
+      ...cmExtensionsForPath(filePath || "", isMobile, codeWrap, appTheme),
+      ...(codeWrap ? [EditorView.lineWrapping] : []),
       ...extraExtensionsList,
     ],
-    [filePath, isMobile, mobileCodeWrap, appTheme, extraExtensionsList]
+    [filePath, isMobile, codeWrap, appTheme, extraExtensionsList]
   );
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export default function AppViewCodeEditor({
       )}
       <CodeMirror
         value={value}
-        key={`${filePath}-${appTheme}-${mobileCodeWrap ? "wrap" : "nowrap"}`}
+        key={`${filePath}-${appTheme}-${codeWrap ? "wrap" : "nowrap"}`}
         theme="none"
         extensions={cmExtensions}
         editable={false}

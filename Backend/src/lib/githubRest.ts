@@ -34,6 +34,29 @@ export async function githubRestJson<T>(token: string, path: string): Promise<T>
   return JSON.parse(text) as T;
 }
 
+export async function githubRestJsonMethod<T>(
+  token: string,
+  method: "POST" | "PUT" | "PATCH",
+  path: string,
+  body: unknown
+): Promise<T> {
+  const res = await fetch(`${GH_API}${path}`, {
+    method,
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new GithubRestError(res.status, text.slice(0, 500));
+  }
+  return text ? (JSON.parse(text) as T) : ({} as T);
+}
+
 export async function githubRestText(
   token: string,
   path: string,
@@ -465,6 +488,128 @@ export async function getRepoFileContent(
   }
 
   return { text: null, isBinary: true, size: data.size ?? 0 };
+}
+
+/** Contents API blob: includes `sha` required for PUT updates. */
+export async function getRepoFileBlobAtRef(
+  token: string,
+  owner: string,
+  repo: string,
+  filePath: string,
+  ref: string
+): Promise<{ text: string | null; sha: string | null; isBinary: boolean; size: number }> {
+  const path = filePath.replace(/^\//, "");
+  const q = new URLSearchParams();
+  if (ref) q.set("ref", ref);
+  const encPath = path
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  const data = await githubRestJson<{
+    content?: string;
+    encoding?: string;
+    size?: number;
+    sha?: string;
+    message?: string;
+  }>(token, `${githubRepoApiRoot(owner, repo)}/contents/${encPath}?${q}`);
+
+  const sha = typeof data.sha === "string" ? data.sha : null;
+  if (data.encoding === "base64" && data.content) {
+    const raw = Buffer.from(data.content.replace(/\n/g, ""), "base64");
+    const NUL = raw.indexOf(0);
+    if (NUL !== -1) {
+      return { text: null, sha, isBinary: true, size: data.size ?? raw.length };
+    }
+    return {
+      text: raw.toString("utf8"),
+      sha,
+      isBinary: false,
+      size: data.size ?? raw.length,
+    };
+  }
+
+  return { text: null, sha, isBinary: true, size: data.size ?? 0 };
+}
+
+/** Create a branch ref pointing at `sha` (commit SHA). */
+export async function createGitRef(
+  token: string,
+  owner: string,
+  repo: string,
+  refName: string,
+  sha: string
+): Promise<{ ref: string; url: string }> {
+  const ref = refName.startsWith("refs/") ? refName : `refs/heads/${refName}`;
+  return githubRestJsonMethod<{ ref: string; url: string }>(
+    token,
+    "POST",
+    `${githubRepoApiRoot(owner, repo)}/git/refs`,
+    { ref, sha }
+  );
+}
+
+/** Update a file on a branch (creates a commit). */
+export async function updateRepoFileContents(
+  token: string,
+  owner: string,
+  repo: string,
+  filePath: string,
+  branch: string,
+  message: string,
+  newUtf8Content: string,
+  fileSha: string
+): Promise<{ commit: { sha: string }; content: { sha: string } }> {
+  const path = filePath.replace(/^\//, "");
+  const encPath = path
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  const content = Buffer.from(newUtf8Content, "utf8").toString("base64");
+  return githubRestJsonMethod(
+    token,
+    "PUT",
+    `${githubRepoApiRoot(owner, repo)}/contents/${encPath}`,
+    {
+      message,
+      content,
+      sha: fileSha,
+      branch,
+    }
+  );
+}
+
+export type CreatedPullRest = {
+  number: number;
+  html_url: string;
+  title: string;
+  draft: boolean;
+};
+
+/** Open a pull request (use draft: true for auto-fix flow). */
+export async function createPullRequestRest(
+  token: string,
+  owner: string,
+  repo: string,
+  body: {
+    title: string;
+    body: string;
+    head: string;
+    base: string;
+    draft?: boolean;
+  }
+): Promise<CreatedPullRest> {
+  return githubRestJsonMethod<CreatedPullRest>(
+    token,
+    "POST",
+    `${githubRepoApiRoot(owner, repo)}/pulls`,
+    {
+      title: body.title,
+      body: body.body,
+      head: body.head,
+      base: body.base,
+      draft: body.draft ?? false,
+    }
+  );
 }
 
 function escapeRegex(s: string): string {

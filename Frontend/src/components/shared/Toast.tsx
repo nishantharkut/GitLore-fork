@@ -36,10 +36,15 @@ function ToastRow({ item, onDismiss }: { item: ToastViewportItem; onDismiss: () 
     });
   };
 
+  const live =
+    item.type === "error"
+      ? ({ role: "alert" as const, "aria-live": "assertive" as const })
+      : ({ role: "status" as const, "aria-live": "polite" as const });
+
   return (
     <div
       ref={rootRef}
-      role="status"
+      {...live}
       className={`flex max-w-sm items-start gap-2 border border-gitlore-border border-l-4 ${border[item.type]} rounded-lg bg-gitlore-surface px-4 py-3 shadow-lg`}
     >
       <p className="min-w-0 flex-1 font-body text-sm text-gitlore-text">{item.message}</p>

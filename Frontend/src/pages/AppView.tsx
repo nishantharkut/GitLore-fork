@@ -8,6 +8,7 @@ import { WrapText } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
+import { useToast } from "@/context/ToastContext";
 import {
   analyzeLine,
   explainComment,
@@ -16,10 +17,13 @@ import {
   fetchRepoFileRaw,
   fetchRepoPullRequests,
   fetchPullDiffReview,
+  postAutoFixClassify,
+  postAutoFixApply,
   type InsightExplanation,
   type InsightNarrative,
   type RepoPullSummary,
   type PullDiffReviewFile,
+  type AutoFixClassifyResponse,
 } from "@/lib/gitloreApi";
 import { pathsToFileTree, type FileNode } from "@/lib/pathsToFileTree";
 import { parseUnifiedDiff, diffLinesToHunkString, type ParsedDiffLine } from "@/lib/parseUnifiedDiff";
@@ -715,6 +719,7 @@ const AppView = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
+  const { toast } = useToast();
   const { target, repoFull, setTarget, repoReady } = useRepo();
   const isMobile = useIsMobile();
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -748,6 +753,10 @@ const AppView = () => {
   const [pendingEditorScrollLine, setPendingEditorScrollLine] = useState<number | null>(null);
   const [browseRepoExpanded, setBrowseRepoExpanded] = useState(true);
   const [explanationCommentId, setExplanationCommentId] = useState<number | null>(null);
+  const [autoFix, setAutoFix] = useState<AutoFixClassifyResponse | null>(null);
+  const [autoFixScanning, setAutoFixScanning] = useState(false);
+  const [autoFixApplying, setAutoFixApplying] = useState(false);
+  const [autoFixApproved, setAutoFixApproved] = useState<Record<number, boolean>>({});
   const [panel, setPanel] = useState<PanelContent>({ type: "idle" });
   const [insightLoading, setInsightLoading] = useState(false);
   const [repoCheckMsg, setRepoCheckMsg] = useState<string | null>(null);
@@ -803,6 +812,8 @@ const AppView = () => {
 
   useEffect(() => {
     setExplanationCommentId(null);
+    setAutoFix(null);
+    setAutoFixApproved({});
   }, [selectedPrNumber]);
 
   /** Feature toggle: fade panel and reset without re-sliding the column. */
@@ -1134,6 +1145,103 @@ const AppView = () => {
     [user, repoFull, selectedPrNumber, target.filePath, diffLines, setTarget]
   );
 
+  const handleAutoFixScan = useCallback(async () => {
+    if (!user || selectedPrNumber == null) return;
+    setAutoFixScanning(true);
+    try {
+      const r = await postAutoFixClassify(target.owner, target.name, selectedPrNumber);
+      setAutoFix(r);
+      toast({
+        type: "info",
+        message: `Auto-fix scan: ${r.summary.auto_fixable} auto-fixable, ${r.summary.suggest_fix} suggestions`,
+      });
+    } catch (e) {
+      toast({
+        type: "error",
+        message: e instanceof Error ? e.message : "Auto-fix scan failed",
+      });
+    } finally {
+      setAutoFixScanning(false);
+    }
+  }, [user, selectedPrNumber, target.owner, target.name, toast]);
+
+  const handleAutoFixApplyAuto = useCallback(async () => {
+    if (!user || selectedPrNumber == null || !autoFix) return;
+    const ids = autoFix.classified
+      .filter((r) => r.classification === "AUTO_FIXABLE" && r.fix != null)
+      .map((r) => r.comment_id);
+    if (ids.length === 0) return;
+    setAutoFixApplying(true);
+    try {
+      const res = await postAutoFixApply(target.owner, target.name, selectedPrNumber, { comment_ids: ids });
+      const appliedIds = new Set(res.applied.map((a) => a.comment_id));
+      setAutoFixApproved((prev) => {
+        const next = { ...prev };
+        for (const id of appliedIds) delete next[id];
+        return next;
+      });
+      toast({
+        type: "success",
+        message:
+          res.failed.length > 0
+            ? `Draft PR #${res.draft_pr.number}: ${res.applied.length} applied, ${res.failed.length} failed`
+            : `Draft PR #${res.draft_pr.number}: ${res.applied.length} fix(es) applied`,
+      });
+      const r2 = await postAutoFixClassify(target.owner, target.name, selectedPrNumber);
+      setAutoFix(r2);
+    } catch (e) {
+      toast({
+        type: "error",
+        message: e instanceof Error ? e.message : "Apply auto-fixes failed",
+      });
+    } finally {
+      setAutoFixApplying(false);
+    }
+  }, [user, selectedPrNumber, autoFix, target.owner, target.name, toast]);
+
+  const handleAutoFixCreateDraft = useCallback(async () => {
+    if (!user || selectedPrNumber == null) return;
+    const ids = Object.entries(autoFixApproved)
+      .filter(([, v]) => v)
+      .map(([k]) => Number(k));
+    if (ids.length === 0) return;
+    setAutoFixApplying(true);
+    try {
+      const res = await postAutoFixApply(target.owner, target.name, selectedPrNumber, { comment_ids: ids });
+      const appliedIds = new Set(res.applied.map((a) => a.comment_id));
+      setAutoFixApproved((prev) => {
+        const next = { ...prev };
+        for (const id of appliedIds) delete next[id];
+        return next;
+      });
+      toast({
+        type: "success",
+        message:
+          res.failed.length > 0
+            ? `Draft PR #${res.draft_pr.number}: ${res.applied.length} applied, ${res.failed.length} failed`
+            : `Draft PR #${res.draft_pr.number}: ${res.applied.length} approved fix(es) applied`,
+      });
+      const r2 = await postAutoFixClassify(target.owner, target.name, selectedPrNumber);
+      setAutoFix(r2);
+    } catch (e) {
+      toast({
+        type: "error",
+        message: e instanceof Error ? e.message : "Create draft PR failed",
+      });
+    } finally {
+      setAutoFixApplying(false);
+    }
+  }, [user, selectedPrNumber, autoFixApproved, target.owner, target.name, toast]);
+
+  const handleAutoFixToggleApprove = useCallback((commentId: number) => {
+    setAutoFixApproved((prev) => ({ ...prev, [commentId]: !prev[commentId] }));
+  }, []);
+
+  const autoFixRowForExplanation = useMemo(() => {
+    if (explanationCommentId == null || !autoFix) return null;
+    return autoFix.classified.find((r) => r.comment_id === explanationCommentId) ?? null;
+  }, [explanationCommentId, autoFix]);
+
   const inlineCommentRows = useMemo(
     () =>
       reviewComments
@@ -1281,6 +1389,18 @@ const AppView = () => {
         error={null}
         diffHunk={panel.diffHunk}
         prNumber={panel.prNumber}
+        autoFixRow={autoFixRowForExplanation}
+        autoFixApproved={
+          explanationCommentId != null ? !!autoFixApproved[explanationCommentId] : false
+        }
+        onToggleAutoFixApprove={
+          explanationCommentId != null &&
+          autoFixRowForExplanation?.fix &&
+          (autoFixRowForExplanation.classification === "AUTO_FIXABLE" ||
+            autoFixRowForExplanation.classification === "SUGGEST_FIX")
+            ? () => handleAutoFixToggleApprove(explanationCommentId)
+            : undefined
+        }
       />
     ) : panel.type === "narrative" ? (
       <NarrativePanel
@@ -1312,6 +1432,14 @@ const AppView = () => {
           const rc = reviewComments.find((x) => x.id === c.id);
           if (rc) void handleCommentClick(rc);
         }}
+        autoFix={autoFix}
+        autoFixScanning={autoFixScanning}
+        autoFixApplying={autoFixApplying}
+        autoFixApproved={autoFixApproved}
+        onAutoFixScan={handleAutoFixScan}
+        onAutoFixApplyAuto={handleAutoFixApplyAuto}
+        onAutoFixCreateDraft={handleAutoFixCreateDraft}
+        onAutoFixToggleApprove={handleAutoFixToggleApprove}
       />
     ) : (
       <div className="flex h-full items-center justify-center p-8">
@@ -1358,7 +1486,7 @@ const AppView = () => {
         value={sourceCode}
         filePath={target.filePath || ""}
         isMobile={isMobile}
-        mobileCodeWrap={codeWrap}
+        codeWrap={codeWrap}
         fileLoading={fileLoading}
         selectedLine={selectedLine}
         onLineActivate={(line) => void handleLineClickAnime(line)}

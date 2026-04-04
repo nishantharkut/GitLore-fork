@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { InsightExplanation } from "@/lib/gitloreApi";
+import type { AutoFixClassifiedRow, InsightExplanation } from "@/lib/gitloreApi";
 import { postNarrate } from "@/lib/gitloreApi";
 import { SplitDiffView } from "./SplitDiffView";
 
@@ -42,6 +42,13 @@ function explanationConfidenceStyle(level: "HIGH" | "MEDIUM" | "LOW"): {
   };
 }
 
+const PREVIEW_DIFF_CAP = 14_000;
+
+function capDiffPreview(s: string): string {
+  if (s.length <= PREVIEW_DIFF_CAP) return s;
+  return `${s.slice(0, PREVIEW_DIFF_CAP)}\n\n/* …truncated for preview (${s.length} chars) */`;
+}
+
 type Props = {
   data: InsightExplanation | null;
   loading: boolean;
@@ -49,6 +56,10 @@ type Props = {
   diffHunk?: string | null;
   prNumber?: number | null;
   onRetry?: () => void;
+  /** When a scan was run, show tiered proposed fix for this comment. */
+  autoFixRow?: AutoFixClassifiedRow | null;
+  autoFixApproved?: boolean;
+  onToggleAutoFixApprove?: () => void;
 };
 
 export function ExplanationView({
@@ -58,6 +69,9 @@ export function ExplanationView({
   diffHunk,
   prNumber,
   onRetry,
+  autoFixRow = null,
+  autoFixApproved = false,
+  onToggleAutoFixApprove,
 }: Props) {
   const [narrateBusy, setNarrateBusy] = useState(false);
 
@@ -151,6 +165,46 @@ export function ExplanationView({
         </div>
 
         <SplitDiffView buggyCode={buggy} fixedCode={fixedSide} />
+
+        {autoFixRow?.fix && (
+          <section className="rounded-sm border border-gitlore-border bg-[var(--elevated)] px-3.5 py-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gitlore-text-secondary">
+                Proposed fix (ReviewLens)
+              </p>
+              <span className="rounded-sm border border-gitlore-accent/40 bg-gitlore-accent/10 px-2 py-0.5 font-code text-[10px] text-gitlore-accent">
+                Tier {autoFixRow.fix.tier} · {autoFixRow.fix.tier_label}
+              </span>
+            </div>
+            <p className="mb-2 text-xs text-gitlore-text-secondary">{autoFixRow.fix.description}</p>
+            {autoFixRow.fix.validation.warnings.length > 0 && (
+              <ul className="mb-2 list-inside list-disc text-[11px] text-amber-200/90">
+                {autoFixRow.fix.validation.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            )}
+            {!autoFixRow.fix.validation.passed && (
+              <p className="mb-2 text-[11px] text-gitlore-error">Validation did not pass; review carefully before approving.</p>
+            )}
+            <SplitDiffView
+              buggyCode={capDiffPreview(autoFixRow.fix.original_code)}
+              fixedCode={capDiffPreview(autoFixRow.fix.fixed_code)}
+            />
+            {(autoFixRow.classification === "AUTO_FIXABLE" || autoFixRow.classification === "SUGGEST_FIX") &&
+              onToggleAutoFixApprove && (
+                <label className="mt-3 flex cursor-pointer items-center gap-2 border-t border-gitlore-border pt-3 font-body text-xs text-gitlore-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={autoFixApproved}
+                    onChange={() => onToggleAutoFixApprove()}
+                    className="rounded border-gitlore-border"
+                  />
+                  Approve for draft PR (with other approved comments)
+                </label>
+              )}
+          </section>
+        )}
 
         {/* Same card recipe as narrative “Impact” (error tint) */}
         <section

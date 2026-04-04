@@ -134,9 +134,10 @@ export function gitloreSyntaxHighlighting(mode: CmColorMode): Extension {
 }
 
 /** Editor chrome (background, gutters, selection) for light or dark app theme. */
-export function buildCmTheme(mobile: boolean, mobileSoftWrap: boolean, mode: CmColorMode) {
+export function buildCmTheme(mobile: boolean, lineWrap: boolean, mode: CmColorMode) {
   const fontSize = mobile ? "12px" : "13px";
-  const wrap = mobile && mobileSoftWrap;
+  /** Match `EditorView.lineWrapping` on all viewports when the user enables soft wrap. */
+  const wrap = lineWrap;
   const c = mode === "light" ? LIGHT : DARK;
 
   return EditorView.theme({
@@ -174,12 +175,12 @@ export function buildCmTheme(mobile: boolean, mobileSoftWrap: boolean, mode: CmC
 export function cmExtensionsForPath(
   filePath: string,
   mobile: boolean,
-  mobileSoftWrap: boolean,
+  lineWrap: boolean,
   mode: CmColorMode
 ): Extension[] {
   return [
     cmLanguageForPath(filePath || ""),
-    buildCmTheme(mobile, mobileSoftWrap, mode),
+    buildCmTheme(mobile, lineWrap, mode),
     gitloreSyntaxHighlighting(mode),
   ];
 }
