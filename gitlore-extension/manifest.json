@@ -19,12 +19,13 @@
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
-  "permissions": ["identity", "storage", "sidePanel", "tabs"],
+  "permissions": ["alarms", "storage", "sidePanel", "tabs"],
   "host_permissions": [
     "https://api.github.com/*",
     "https://github.com/*",
     "https://generativelanguage.googleapis.com/*"
   ],
+  "optional_host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
   "content_scripts": [
     {
       "matches": ["https://github.com/*"],
@@ -33,7 +34,7 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'"
+    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:"
   },
   "web_accessible_resources": [
     {

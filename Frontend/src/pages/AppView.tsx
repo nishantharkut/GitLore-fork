@@ -1555,16 +1555,18 @@ const AppView = () => {
       </div>
       {mobileTreeOpen && (
         <div className="space-y-3 border-t border-gitlore-border px-3 pb-3 pt-2">
-          <div>
-            <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 font-medium">Pull Request</div>
-            <PRDropdown
-              pulls={pulls}
-              selectedNumber={selectedPrNumber}
-              onSelect={setSelectedPrNumber}
-              loading={prListLoading}
-              emptyHint="No PRs in this repo"
-            />
-          </div>
+          {activeFeature === "review" && (
+            <div>
+              <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 font-medium">Pull Request</div>
+              <PRDropdown
+                pulls={pulls}
+                selectedNumber={selectedPrNumber}
+                onSelect={setSelectedPrNumber}
+                loading={prListLoading}
+                emptyHint="No PRs in this repo"
+              />
+            </div>
+          )}
           <div>
             {activeFeature === "review" && selectedPrNumber != null && (
               <div className="mb-3">
@@ -1725,16 +1727,18 @@ const AppView = () => {
 
   const fileTreeAside = (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-gitlore-surface md:border-r md:border-gitlore-border">
-      <div className="relative z-30 shrink-0 border-b border-gitlore-border bg-gitlore-surface p-3">
-        <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 font-medium md:max-lg:text-[11px]">Pull Request</div>
-        <PRDropdown
-          pulls={pulls}
-          selectedNumber={selectedPrNumber}
-          onSelect={setSelectedPrNumber}
-          loading={prListLoading}
-          emptyHint="No PRs in this repo"
-        />
-      </div>
+      {activeFeature === "review" && (
+        <div className="relative z-30 shrink-0 border-b border-gitlore-border bg-gitlore-surface p-3">
+          <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 font-medium md:max-lg:text-[11px]">Pull Request</div>
+          <PRDropdown
+            pulls={pulls}
+            selectedNumber={selectedPrNumber}
+            onSelect={setSelectedPrNumber}
+            loading={prListLoading}
+            emptyHint="No PRs in this repo"
+          />
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2">
         {activeFeature === "review" && selectedPrNumber != null && (
           <div className="mb-3">

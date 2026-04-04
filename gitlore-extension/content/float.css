@@ -1,7 +1,7 @@
-/* GitLore floating launcher (injected into Shadow DOM; isolated from host page) */
+/* Floating launcher on github.com — GitLore web app theme */
 .gitlore-float-host {
   all: initial;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.4;
   box-sizing: border-box;
@@ -18,14 +18,15 @@
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  border: 2px solid rgba(56, 189, 248, 0.85);
-  background: linear-gradient(145deg, #0f172a, #1e293b);
-  color: #38bdf8;
-  font-weight: 700;
-  font-size: 11px;
+  border: 2px solid rgba(201, 168, 76, 0.65);
+  background: linear-gradient(145deg, #08080a, #0f0f12);
+  color: #c9a84c;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+  font-size: 10px;
   letter-spacing: -0.02em;
   cursor: grab;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
   z-index: 2147483647;
   display: none;
   align-items: center;
@@ -54,11 +55,11 @@
   z-index: 2147483646;
   display: none;
   flex-direction: column;
-  border-radius: 10px;
+  border-radius: 4px;
   overflow: hidden;
-  border: 1px solid #334155;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
-  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  background: #08080a;
 }
 
 #gitlore-float-panel.gitlore-panel-open {
@@ -72,9 +73,10 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
-  background: #1e293b;
-  border-bottom: 1px solid #334155;
-  color: #f1f5f9;
+  background: #0f0f12;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #ededef;
+  font-family: "Space Grotesk", sans-serif;
   font-size: 13px;
   font-weight: 600;
 }
@@ -82,22 +84,25 @@
 .gitlore-panel-hint {
   font-size: 10px;
   font-weight: 400;
-  color: #94a3b8;
+  color: #7c7c86;
   max-width: 55%;
+  font-family: "Inter", system-ui, sans-serif;
 }
 
 #gitlore-close-panel {
-  border: 1px solid #475569;
-  background: #0f172a;
-  color: #e2e8f0;
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0a0a0d;
+  color: #ededef;
+  border-radius: 4px;
   padding: 4px 10px;
   font-size: 12px;
+  font-family: "Inter", system-ui, sans-serif;
   cursor: pointer;
 }
 
 #gitlore-close-panel:hover {
-  background: #1e293b;
+  background: #16161a;
+  border-color: rgba(201, 168, 76, 0.25);
 }
 
 #gitlore-panel-iframe {
@@ -105,5 +110,5 @@
   min-height: 0;
   width: 100%;
   border: none;
-  background: #0f172a;
+  background: #08080a;
 }

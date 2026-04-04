@@ -70,6 +70,15 @@ ingestRouter.get("/repo/:owner/:name/ingest/status", async (c) => {
 
     const nodeCount = await db.collection("knowledge_nodes").countDocuments({ repo: repoFull });
 
+    const recentErrors =
+      Array.isArray(progress.errors) && progress.errors.length > 0
+        ? progress.errors.slice(-3).map((e: { pr_number?: number; error?: string }) => {
+            const pr = typeof e.pr_number === "number" ? e.pr_number : 0;
+            const err = typeof e.error === "string" ? e.error : String(e);
+            return pr > 0 ? `PR #${pr}: ${err}` : err;
+          })
+        : [];
+
     if (isStaleIngestRunning(progress)) {
       return c.json({
         status: "stale",
@@ -77,6 +86,7 @@ ingestRouter.get("/repo/:owner/:name/ingest/status", async (c) => {
         failed: progress.failed ?? 0,
         total: progress.total ?? 0,
         errorCount: Array.isArray(progress.errors) ? progress.errors.length : 0,
+        recentErrors,
         nodeCount,
         hint:
           "Ingest was marked running but has not updated recently (e.g. server restarted). Start again to continue.",
@@ -89,6 +99,7 @@ ingestRouter.get("/repo/:owner/:name/ingest/status", async (c) => {
       failed: progress.failed ?? 0,
       total: progress.total,
       errorCount: Array.isArray(progress.errors) ? progress.errors.length : 0,
+      recentErrors,
       nodeCount,
     });
   } catch (error) {

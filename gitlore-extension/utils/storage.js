@@ -10,18 +10,21 @@
  * @typedef {Object} ExtensionSettings
  * @property {string} [githubOauthClientId] GitHub OAuth App client ID (public; required for Connect)
  * @property {string} [githubOauthClientSecret] OAuth client secret (optional; token exchange only; do not commit)
- * @property {string} [geminiApiKey] Google AI Studio key for repo chat (optional)
+ * @property {string} [geminiApiKey] Google AI Studio key for standalone chat (optional)
+ * @property {string} [gitloreBackendUrl] GitLore API base URL, e.g. http://localhost:3001 — enables platform ingest + chat
  */
 
 const DEFAULT_SETTINGS = {
   githubOauthClientId: "",
   githubOauthClientSecret: "",
   geminiApiKey: "",
+  gitloreBackendUrl: "",
 };
 
 const STORAGE_KEYS = {
   GITHUB_TOKEN: "githubAccessToken",
   GITHUB_USER: "githubUser",
+  GITLORE_SESSION: "gitloreSessionToken",
   SETTINGS: "gitloreSettings",
   CHAT_PREFIX: "chat:",
   GRAPH_PREFIX: "graph:",
@@ -43,6 +46,8 @@ export async function getSettings() {
         ? r.githubOauthClientSecret
         : DEFAULT_SETTINGS.githubOauthClientSecret,
     geminiApiKey: typeof r.geminiApiKey === "string" ? r.geminiApiKey : DEFAULT_SETTINGS.geminiApiKey,
+    gitloreBackendUrl:
+      typeof r.gitloreBackendUrl === "string" ? r.gitloreBackendUrl : DEFAULT_SETTINGS.gitloreBackendUrl,
   };
 }
 
@@ -64,6 +69,10 @@ export async function saveSettings(patch) {
           : cur.githubOauthClientSecret,
       geminiApiKey:
         typeof patch.geminiApiKey === "string" ? patch.geminiApiKey.trim() : cur.geminiApiKey,
+      gitloreBackendUrl:
+        typeof patch.gitloreBackendUrl === "string"
+          ? patch.gitloreBackendUrl.trim().replace(/\/$/, "")
+          : cur.gitloreBackendUrl,
     },
   });
 }
@@ -111,10 +120,36 @@ export async function setGithubUser(user) {
 }
 
 /**
+ * @returns {Promise<string | null>}
+ */
+export async function getGitloreSession() {
+  const data = await chrome.storage.local.get(STORAGE_KEYS.GITLORE_SESSION);
+  const t = data[STORAGE_KEYS.GITLORE_SESSION];
+  return typeof t === "string" && t.length > 0 ? t : null;
+}
+
+/**
+ * @param {string | null} token
+ * @returns {Promise<void>}
+ */
+export async function setGitloreSession(token) {
+  if (token == null || token === "") {
+    await chrome.storage.local.remove(STORAGE_KEYS.GITLORE_SESSION);
+    return;
+  }
+  await chrome.storage.local.set({ [STORAGE_KEYS.GITLORE_SESSION]: token });
+}
+
+/**
+ * Clears GitHub token, profile, and GitLore server session.
  * @returns {Promise<void>}
  */
 export async function clearSession() {
-  await chrome.storage.local.remove([STORAGE_KEYS.GITHUB_TOKEN, STORAGE_KEYS.GITHUB_USER]);
+  await chrome.storage.local.remove([
+    STORAGE_KEYS.GITHUB_TOKEN,
+    STORAGE_KEYS.GITHUB_USER,
+    STORAGE_KEYS.GITLORE_SESSION,
+  ]);
 }
 
 /**

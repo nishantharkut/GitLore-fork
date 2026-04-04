@@ -233,6 +233,8 @@ const chatRequestSchema = z.object({
   question: z.string().min(5).max(2000),
   /** Prior user/assistant turns for follow-ups; retrieval still keys off `question` only. */
   history: z.array(chatHistoryTurnSchema).max(24).optional(),
+  /** Shorter answers (e.g. Chrome extension side panel). */
+  concise: z.boolean().optional(),
 });
 
 const MAX_HISTORY_TURNS = 14;
@@ -290,6 +292,7 @@ chatRouter.post("/repo/:owner/:name/chat", async (c) => {
     const parsed = chatRequestSchema.parse(body);
     const question = parsed.question.trim();
     const chatHistory = normalizeChatHistory(parsed.history);
+    const concise = Boolean(parsed.concise);
 
     const db = getDB();
 
@@ -332,6 +335,7 @@ chatRouter.post("/repo/:owner/:name/chat", async (c) => {
           question,
           ingestNote,
           geminiModel: GEMINI_CHAT_MODEL,
+          concise,
         });
         return c.json(agentRes);
       } catch (e) {
@@ -403,7 +407,16 @@ Formatting:
 - End with a **Sources to open** line only if not redundant: point readers to the highest-signal PR URLs from the nodes (pr_url).
 
 Multi-turn conversation:
-- Earlier turns are for phrasing and follow-ups only. The **Knowledge nodes** block in this (latest) message is the sole source of truth for facts, PR/issue numbers, quotes, and URLs. If a prior answer was wrong or incomplete, correct it using the nodes here.`;
+- Earlier turns are for phrasing and follow-ups only. The **Knowledge nodes** block in this (latest) message is the sole source of truth for facts, PR/issue numbers, quotes, and URLs. If a prior answer was wrong or incomplete, correct it using the nodes here.${
+      concise
+        ? `
+
+Concise mode (client requested):
+- Cap the answer at roughly **200–280 words**. Prefer **3–6 bullets** or **two short paragraphs**.
+- **No Mermaid** diagrams. Use **## TL;DR** only; skip a long **## Details** unless the question truly needs it.
+- Stay grounded in the nodes; do not pad with generic advice.`
+        : ""
+    }`;
 
     const userMsg = `Repository context: ${repoFull}
 
@@ -457,7 +470,7 @@ Instructions: Answer using only the nodes above. Prefer clarity over length. If 
                 contents: contentsForModel as any,
                 config: {
                   systemInstruction: systemPreamble,
-                  maxOutputTokens: 6144,
+                  maxOutputTokens: concise ? 1536 : 6144,
                   temperature: 0.38,
                   topP: 0.92,
                   topK: 40,

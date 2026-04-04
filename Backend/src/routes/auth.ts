@@ -217,6 +217,42 @@ authRouter.get("/github/extension/start", (c) => {
 });
 
 /**
+ * Exchange a GitHub OAuth user access token (e.g. extension device flow) for a GitLore session.
+ * POST /auth/github/exchange-token  { "github_access_token": "gho_..." }
+ * Returns the same signed session string as the web cookie (use Authorization: Bearer or X-GitLore-Session on /api/*).
+ */
+authRouter.post("/github/exchange-token", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const accessToken =
+      typeof body.github_access_token === "string"
+        ? body.github_access_token.trim()
+        : "";
+    if (!accessToken) {
+      return c.json({ error: "Missing github_access_token" }, 400);
+    }
+
+    const { user, userInfo } = await upsertUserFromGithubAccessToken(accessToken);
+    const sessionToken = signSession(user._id.toString());
+
+    return c.json({
+      session: sessionToken,
+      user: {
+        login: userInfo.login,
+        name: userInfo.name ?? null,
+        avatar_url: userInfo.avatarUrl,
+      },
+    });
+  } catch (error) {
+    console.error("github/exchange-token error:", error);
+    return c.json(
+      { error: error instanceof Error ? error.message : "Exchange failed" },
+      500
+    );
+  }
+});
+
+/**
  * Chrome extension: exchange code for tokens + same signed session as the web cookie.
  */
 authRouter.post("/github/extension/token", async (c) => {

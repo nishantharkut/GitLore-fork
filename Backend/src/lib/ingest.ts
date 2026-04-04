@@ -206,10 +206,20 @@ export async function fetchMergedPRs(
         if (/rate limit|RATE_LIMIT|API rate limit exceeded/i.test(msg)) {
           throw new Error(`GitHub GraphQL rate limit: ${msg}`);
         }
+        throw new Error(`GitHub GraphQL: ${msg}`);
       }
 
-      const connection = result.repository?.pullRequests;
-      if (!connection?.nodes?.length) break;
+      if (!result?.repository) {
+        throw new Error(
+          "GitHub returned no repository for this owner/name. Check spelling, repo visibility, and that your token has the repo scope (re-authorize if needed)."
+        );
+      }
+
+      const connection = result.repository.pullRequests;
+      if (!connection) {
+        throw new Error("GitHub GraphQL: missing pullRequests on repository");
+      }
+      if (!connection.nodes?.length) break;
 
       allPRs.push(...connection.nodes);
 

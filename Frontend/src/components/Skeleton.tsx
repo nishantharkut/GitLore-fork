@@ -13,9 +13,14 @@ export function Spinner({ className = "h-4 w-4", label }: { className?: string; 
 
 export function CenteredLoader({ message }: { message: string }) {
   return (
-    <div className="flex min-h-[calc(100vh-56px)] flex-col items-center justify-center gap-3 bg-gitlore-bg px-4">
+    <div
+      className="flex min-h-[calc(100vh-56px)] flex-col items-center justify-center gap-3 bg-gitlore-bg px-4"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
       <Spinner className="h-8 w-8 border-[3px]" label={message} />
-      <p className="max-w-sm text-center text-sm text-gitlore-text-secondary">{message}</p>
+      <p className="max-w-sm text-center text-sm font-medium text-gitlore-text-secondary">{message}</p>
     </div>
   );
 }
@@ -50,19 +55,11 @@ export const PageSkeleton = () => (
 
 /** Matches /overview two-column layout + graph/chat column */
 export function OverviewSkeleton({ message }: { message?: string } = {}) {
+  if (message) {
+    return <CenteredLoader message={message} />;
+  }
   return (
     <div className="flex min-h-[calc(100vh-56px)] flex-col bg-gitlore-bg">
-      {message ? (
-        <div
-          className="flex shrink-0 items-center justify-center gap-3 border-b border-gitlore-border bg-gitlore-surface/90 px-4 py-4 backdrop-blur-sm"
-          role="status"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <Spinner className="h-5 w-5 border-2" label={message} />
-          <p className="text-center text-sm font-medium text-gitlore-text-secondary">{message}</p>
-        </div>
-      ) : null}
       <div className="flex-1">
         <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-8 md:py-12">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-12 md:gap-8">

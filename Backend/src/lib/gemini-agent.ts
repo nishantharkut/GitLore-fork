@@ -127,6 +127,8 @@ export type AgenticChatArgs = {
   question: string;
   ingestNote: string;
   geminiModel: string;
+  /** Shorter side-panel style answers */
+  concise?: boolean;
 };
 
 export async function agenticKnowledgeChat(
@@ -143,6 +145,7 @@ export async function agenticKnowledgeChat(
     question,
     ingestNote,
     geminiModel,
+    concise = false,
   } = args;
 
   const gql = createGithubClient(accessToken);
@@ -316,7 +319,10 @@ If many nodes or a large tool JSON payload are present, prioritize the most rele
     ai.models.generateContent({
       model: GEMINI_GENERATION_MODEL,
       contents: synthPrompt,
-      config: { temperature: 0.35, maxOutputTokens: 4096 },
+      config: {
+        temperature: 0.35,
+        maxOutputTokens: concise ? 1536 : 4096,
+      },
     })
   );
   let answer = synthRes.text || "Unable to synthesize an answer.";

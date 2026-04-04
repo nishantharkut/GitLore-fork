@@ -205,7 +205,7 @@ const Overview = () => {
       <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-8 md:py-12">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-12 md:gap-8">
           {/* Left Column: Stats & Info */}
-          <div className="space-y-8 md:col-span-5">
+          <div className="min-w-0 space-y-8 md:col-span-5">
             <div>
               <div className="mb-2 text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">Repository</div>
               <h1 className="font-heading text-2xl font-bold text-gitlore-text">{repoFull}</h1>
@@ -404,21 +404,26 @@ const Overview = () => {
               </div>
             </div>
 
-            <div>
+            <div className="min-w-0">
               <div className="mb-3 text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">Most churned files (recent commits)</div>
-              <ol className="space-y-1.5">
+              <ol className="min-w-0 space-y-1.5">
                 {mostChanged.length ? (
                   visibleFiles.map((file, i) => (
-                    <li key={file.name} className="flex items-baseline gap-2 text-sm">
+                    <li key={file.name} className="flex min-w-0 items-baseline gap-2 text-sm">
                       <span className="w-4 shrink-0 text-xs text-gitlore-text-secondary">{i + 1}.</span>
-                      <button
-                        type="button"
-                        className="text-left font-code text-gitlore-accent transition-colors hover:text-gitlore-accent-hover"
-                        onClick={() => onOpenFile(file.name)}
-                      >
-                        {file.name}
-                      </button>
-                      <span className="text-xs text-gitlore-text-secondary">({file.changes} line changes)</span>
+                      <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                        <button
+                          type="button"
+                          title={file.name}
+                          className="min-w-0 flex-1 truncate text-left font-code text-gitlore-accent transition-colors hover:text-gitlore-accent-hover"
+                          onClick={() => onOpenFile(file.name)}
+                        >
+                          {file.name}
+                        </button>
+                        <span className="shrink-0 whitespace-nowrap text-xs text-gitlore-text-secondary">
+                          ({file.changes} line changes)
+                        </span>
+                      </div>
                     </li>
                   ))
                 ) : (

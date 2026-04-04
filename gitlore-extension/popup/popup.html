@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GitLore</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
@@ -23,19 +29,33 @@
     <main id="main">
       <section id="loginSection" class="login-section">
         <p class="lead">
-          Sign in with GitHub using an <strong>OAuth App</strong> you control (PKCE). Put the Client ID in Settings; add
-          the client secret there too if the token step fails (stored only in this browser).
+          Sign in with <strong>GitHub OAuth</strong> (official <strong>device flow</strong>): no extension callback URL.
+          Add your OAuth App <strong>Client ID</strong> in Settings (and optional client secret if GitHub requires it).
         </p>
         <div id="loginError" class="banner error hidden"></div>
+        <div id="deviceFlowBanner" class="banner device-flow-banner hidden" role="status" aria-live="polite">
+          <p class="device-flow-title">On GitHub, enter this code:</p>
+          <p id="deviceFlowCode" class="device-flow-code"></p>
+          <p class="device-flow-hint">
+            A GitHub tab should open shortly. Enter the code there, authorize GitLore, then reopen this popup if it closed — sign-in finishes in the background.
+          </p>
+          <button type="button" id="copyDeviceCodeBtn" class="btn btn-ghost device-flow-copy">
+            Copy code
+          </button>
+        </div>
         <button type="button" id="connectBtn" class="btn btn-primary">Connect with GitHub</button>
         <p class="hint" id="setupHint">
-          Store builds can ship a pre-filled Client ID. Unpacked: open GitHub, create an OAuth app, paste the
-          callback URL below (Copy), then save.
+          Create a GitHub OAuth App (see Settings). Use any valid <em>Authorization callback URL</em> (e.g.
+          <code class="hint-code">http://localhost:3000/callback</code>) — device flow does not use it.
         </p>
         <button type="button" id="toggleSettings" class="btn btn-link">Settings</button>
       </section>
 
       <div id="settingsPanel" class="settings-panel hidden">
+        <p class="settings-oauth-note">
+          OAuth App: GitHub still requires a callback URL when you create the app — use any placeholder (e.g.
+          <code>http://localhost:3000/callback</code>). Sign-in uses <strong>device flow</strong>, not that URL.
+        </p>
         <label class="field">
           <span>GitHub OAuth Client ID</span>
           <input type="text" id="githubOauthClientId" placeholder="Ov23li..." autocomplete="off" />
@@ -52,25 +72,45 @@
             >GitHub’s token API often requires this for OAuth Apps. Rotate the secret if it was ever exposed.</span
           >
         </label>
-        <label class="field">
-          <span>Callback URL for your OAuth app (must match exactly, trailing /)</span>
-          <div class="callback-row">
-            <input type="text" id="callbackHint" readonly class="readonly" autocomplete="off" />
-            <button type="button" id="copyCallbackBtn" class="btn btn-secondary btn-inline">Copy</button>
-          </div>
-        </label>
         <div class="oauth-shortcuts">
           <button type="button" id="openGithubOAuthApps" class="btn btn-ghost btn-tiny">My OAuth apps</button>
           <button type="button" id="openNewGithubOAuth" class="btn btn-ghost btn-tiny">New OAuth App</button>
         </div>
         <label class="field">
-          <span>Gemini API key (optional — for chat)</span>
+          <span>GitLore backend URL (optional — same ingest + chat as the web app)</span>
+          <input
+            type="url"
+            id="gitloreBackendUrl"
+            placeholder="http://localhost:3001"
+            autocomplete="off"
+          />
+          <span class="field-note"
+            >Set <code>CHROME_EXTENSION_CORS_ORIGINS=chrome-extension://&lt;your-id&gt;</code> in Backend <code>.env</code>, reload the extension after changing this.</span>
+        </label>
+        <label class="field">
+          <span>Gemini API key (optional — standalone mode only; server uses its own key for platform chat)</span>
           <input type="password" id="geminiApiKey" placeholder="AIza… from Google AI Studio" autocomplete="off" />
         </label>
+        <div id="settingsError" class="banner error hidden"></div>
         <button type="button" id="saveSettings" class="btn btn-secondary">Save settings</button>
       </div>
 
       <section id="repoSection" class="repo-section hidden">
+        <p class="sidepanel-lead">
+          GitLore runs in Chrome’s <strong>side panel</strong> (right side of the window). Click
+          <strong>Open GitLore panel</strong> below, or choose a repo and click
+          <strong>Analyze with GitLore</strong>.
+        </p>
+        <button type="button" id="openSidePanelBtn" class="btn btn-secondary open-sidepanel-btn">
+          Open GitLore panel
+        </button>
+        <button
+          type="button"
+          id="indexCurrentTabBtn"
+          class="btn btn-primary open-sidepanel-btn hidden"
+        >
+          Index current GitHub tab → backend
+        </button>
         <div id="geminiBanner" class="banner info hidden">
           <strong>Chat needs a Gemini API key.</strong> Create a key at
           <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="inline-link"

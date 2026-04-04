@@ -1,15 +1,31 @@
+/* GitLore web app theme — fonts loaded from sidepanel.html (CSP). */
+
 :root {
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --border: #334155;
-  --text: #f1f5f9;
-  --muted: #94a3b8;
-  --accent: #38bdf8;
-  --accent-dim: #0ea5e9;
-  --user-bubble: #1e3a5f;
-  --ai-bubble: #1e293b;
-  --radius: 8px;
-  --font: "Segoe UI", system-ui, sans-serif;
+  --bg: #08080a;
+  --surface: #0f0f12;
+  --surface-hover: #16161a;
+  --surface-active: #1c1c21;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --border-accent: rgba(201, 168, 76, 0.2);
+  --text: #ededef;
+  --muted: #7c7c86;
+  --text-secondary: #7c7c86;
+  --text-ghost: #3d3d45;
+  --accent: #c9a84c;
+  --accent-hover: #d4b85c;
+  --accent-dim: rgba(201, 168, 76, 0.1);
+  --code-bg: #0a0a0d;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --code-accent: #818cf8;
+  --user-bubble: rgba(201, 168, 76, 0.12);
+  --ai-bubble: #0f0f12;
+  --radius: 4px;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-heading: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 * {
@@ -21,7 +37,7 @@ body {
   margin: 0;
   height: 100%;
   min-height: 100vh;
-  font-family: var(--font);
+  font-family: var(--font-body);
   font-size: 13px;
   color: var(--text);
   background: var(--bg);
@@ -33,49 +49,78 @@ body {
   overflow: hidden;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .topbar {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 12px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
 }
 
-.topbar-title {
+/* Full-width primary row — avoids squeezing repo path beside buttons (was 1-char-wide column + break-all). */
+.topbar-primary {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
+  width: 100%;
 }
 
-.topbar-actions {
+.topbar-brand {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.topbar-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.topbar-buttons {
+  display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
 }
 
 .logo {
-  font-weight: 700;
-  font-size: 14px;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .repo-title {
-  font-size: 12px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--accent);
-  word-break: break-all;
+  font-family: var(--font-mono);
+  line-height: 1.45;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .analyze-status {
   font-size: 11px;
   color: var(--muted);
-  max-width: 200px;
-  text-align: right;
+  line-height: 1.45;
+  word-break: normal;
+  overflow-wrap: break-word;
+  font-family: var(--font-body);
 }
 
 .chat-layout {
@@ -95,9 +140,20 @@ body {
 }
 
 .chat-heading {
-  margin: 0 0 8px;
-  font-size: 13px;
+  margin: 0 0 2px;
+  font-family: var(--font-heading);
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.chat-subtle {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
   flex-shrink: 0;
 }
 
@@ -108,8 +164,8 @@ body {
   padding: 10px 12px;
   margin-bottom: 10px;
   border-radius: var(--radius);
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid var(--border-accent);
+  background: var(--accent-dim);
   flex-shrink: 0;
 }
 
@@ -131,14 +187,30 @@ body {
   padding: 8px 4px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #020617;
+  background: var(--code-bg);
   margin-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) var(--surface);
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 8px;
+}
+.chat-messages::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+.chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 168, 76, 0.4);
 }
 
 .msg {
-  max-width: 95%;
-  padding: 8px 12px;
-  border-radius: 10px;
+  max-width: 100%;
+  padding: 8px 11px;
+  border-radius: var(--radius);
   line-height: 1.5;
   font-size: 12px;
   word-break: break-word;
@@ -147,7 +219,7 @@ body {
 .msg-user {
   align-self: flex-end;
   background: var(--user-bubble);
-  border: 1px solid #334155;
+  border: 1px solid var(--border-accent);
   white-space: pre-wrap;
 }
 
@@ -156,12 +228,42 @@ body {
   background: var(--ai-bubble);
   border: 1px solid var(--border);
   white-space: normal;
+  color: var(--text);
 }
 
-/* Markdown (assistant + optional user) */
+.msg-ai-loading {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.md-empty-fallback {
+  color: var(--muted);
+  margin: 0;
+}
+
 .md-root {
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.5;
+}
+
+.chat-messages .md-root h1,
+.chat-messages .md-root h2 {
+  font-size: 1.05em;
+  margin: 0.5em 0 0.35em;
+}
+
+.chat-messages .md-root h3 {
+  font-size: 1em;
+}
+
+.chat-messages .md-root p {
+  margin: 0.35em 0;
+}
+
+.chat-messages .md-root pre {
+  max-height: 200px;
+  overflow: auto;
+  margin: 0.5em 0;
 }
 
 .md-root > *:first-child {
@@ -179,6 +281,7 @@ body {
 .md-root h5,
 .md-root h6 {
   margin: 0.75em 0 0.4em;
+  font-family: var(--font-heading);
   font-weight: 600;
   line-height: 1.25;
   color: var(--text);
@@ -217,7 +320,7 @@ body {
   padding: 0.35em 0 0.35em 0.85em;
   border-left: 3px solid var(--accent);
   color: var(--muted);
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .md-root hr {
@@ -234,7 +337,7 @@ body {
 
 .md-root strong {
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--text);
 }
 
 .md-root em {
@@ -242,11 +345,11 @@ body {
 }
 
 .md-root code {
-  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
-  background: rgba(2, 6, 23, 0.85);
+  background: var(--code-bg);
   padding: 0.12em 0.4em;
-  border-radius: 4px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
 }
 
@@ -255,8 +358,8 @@ body {
   padding: 10px 12px;
   overflow-x: auto;
   font-size: 11px;
-  border-radius: 8px;
-  background: #0f172a;
+  border-radius: var(--radius);
+  background: var(--code-bg);
   border: 1px solid var(--border);
 }
 
@@ -298,12 +401,16 @@ body {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  font-family: inherit;
+  font-family: var(--font-body);
   font-size: 12px;
 }
 
+.chat-input::placeholder {
+  color: var(--text-ghost);
+}
+
 .btn {
-  font-family: inherit;
+  font-family: var(--font-body);
   cursor: pointer;
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -312,21 +419,30 @@ body {
   font-size: 12px;
 }
 
+.btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
 .btn-sm {
   padding: 4px 10px;
 }
 
 .btn-close {
-  border-color: #475569;
+  border-color: var(--border-strong);
 }
 
 .btn-send {
   padding: 0 14px;
   height: 44px;
-  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
-  color: #0f172a;
+  background: var(--accent);
+  color: #ffffff;
   font-weight: 600;
-  border: none;
+  border: 1px solid var(--border-accent);
+}
+
+.btn-send:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
 
 .btn-send:disabled {
@@ -339,102 +455,23 @@ body {
 }
 
 .status-error {
-  color: #f87171;
+  color: var(--error);
 }
 
 .status-ok {
-  color: #4ade80;
+  color: var(--success);
 }
 
 .status-muted {
   color: var(--muted);
 }
 
-/* Full-panel graph overlay */
-.graph-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100000;
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(6px);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: stretch;
-}
-
-.graph-overlay.hidden {
-  display: none;
-}
-
-.graph-overlay-inner {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.graph-overlay-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  flex-shrink: 0;
-}
-
-.graph-overlay-title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.graph-overlay-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.graph-wrap {
-  flex: 1;
-  min-height: 200px;
-  border: none;
-  background: #020617;
-  overflow: hidden;
-}
-
-.graph-svg {
-  width: 100%;
-  height: 100%;
-  min-height: 200px;
-}
-
-.graph-overlay .hint {
-  font-size: 11px;
-  color: var(--muted);
-  margin: 0;
-  padding: 8px 12px;
-  line-height: 1.4;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-}
-
-/* Switch repository modal (above graph overlay) */
 .repo-picker-modal {
   position: fixed;
   inset: 0;
   z-index: 150000;
-  background: rgba(15, 23, 42, 0.78);
-  backdrop-filter: blur(4px);
+  background: rgba(8, 8, 10, 0.85);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -471,7 +508,8 @@ body {
 
 .repo-picker-title {
   margin: 0;
-  font-size: 14px;
+  font-family: var(--font-heading);
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -487,9 +525,9 @@ body {
   padding: 8px 10px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--code-bg);
   color: var(--text);
-  font-family: inherit;
+  font-family: var(--font-body);
   font-size: 12px;
 }
 
@@ -516,37 +554,40 @@ body {
   gap: 8px;
   padding: 8px 10px;
   margin-bottom: 6px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--code-bg);
   cursor: pointer;
   font-size: 12px;
 }
 
 .repo-picker-item:hover {
-  border-color: var(--accent);
-  background: rgba(56, 189, 248, 0.08);
+  border-color: var(--border-accent);
+  background: var(--accent-dim);
 }
 
 .repo-picker-name {
   word-break: break-all;
   color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .repo-picker-badge {
   flex-shrink: 0;
   font-size: 10px;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   text-transform: uppercase;
+  font-family: var(--font-mono);
 }
 
 .repo-picker-badge-public {
-  color: #4ade80;
-  border: 1px solid rgba(74, 222, 128, 0.4);
+  color: var(--success);
+  border: 1px solid rgba(52, 211, 153, 0.35);
 }
 
 .repo-picker-badge-private {
-  color: #fbbf24;
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: var(--warning);
+  border: 1px solid rgba(251, 191, 36, 0.35);
 }
