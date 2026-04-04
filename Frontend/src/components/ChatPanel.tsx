@@ -1,0 +1,277 @@
+import { useState, useRef, useEffect } from "react";
+import { Send, Bot, User, ExternalLink, Loader, Sparkles } from "lucide-react";
+import { useRepo } from "@/context/RepoContext";
+import { postJSON, fetchChatGraphStatus, type ChatGraphStatusResponse } from "@/lib/gitloreApi";
+
+interface Source {
+  pr_number: number;
+  pr_url: string;
+  title: string;
+  type: string;
+  score?: number;
+}
+
+type SynthesisKind = "none" | "gemini" | "fallback_no_key" | "fallback_error";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  sources?: Source[];
+  searchTier?: string;
+  nodesUsed?: number;
+  synthesis?: SynthesisKind;
+  model?: string;
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  feature: "text-blue-400",
+  bugfix: "text-red-400",
+  refactor: "text-green-400",
+  architecture: "text-purple-400",
+  security: "text-orange-400",
+  performance: "text-yellow-400",
+  documentation: "text-gray-400",
+  other: "text-gray-500",
+};
+
+export function ChatPanel() {
+  const { target, repoReady } = useRepo();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [chatStatus, setChatStatus] = useState<ChatGraphStatusResponse | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!repoReady) {
+      setChatStatus(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchChatGraphStatus(target.owner, target.name)
+      .then((s) => {
+        if (!cancelled) setChatStatus(s);
+      })
+      .catch(() => {
+        if (!cancelled) setChatStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repoReady, target.owner, target.name]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  const handleSend = async () => {
+    const q = input.trim();
+    if (!q || loading || !repoReady) return;
+    if (q.length < 5) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Please ask a slightly longer question (at least 5 characters) so the graph search can match meaningfully.",
+        },
+      ]);
+      return;
+    }
+
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: q }]);
+    setLoading(true);
+
+    try {
+      const res = (await postJSON(`/api/repo/${target.owner}/${target.name}/chat`, {
+        question: q,
+      })) as {
+        answer: string;
+        sources?: Source[];
+        searchTier?: string;
+        nodesUsed?: number;
+        synthesis?: SynthesisKind;
+        model?: string;
+        geminiConfigured?: boolean;
+      };
+      if (typeof res.geminiConfigured === "boolean") {
+        setChatStatus((prev) => ({
+          geminiConfigured: res.geminiConfigured!,
+          model: res.model || prev?.model || "gemini-2.5-flash",
+        }));
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: res.answer,
+          sources: res.sources,
+          searchTier: res.searchTier,
+          nodesUsed: res.nodesUsed,
+          synthesis: res.synthesis,
+          model: res.model,
+        },
+      ]);
+    } catch (err) {
+      const msg =
+        err instanceof Error && /invalid question|5.*2000/i.test(err.message)
+          ? "Use between 5 and 2000 characters for your question."
+          : "Sorry, something went wrong. Try again.";
+      setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+      console.error("Chat error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-[420px] shrink-0 flex-col rounded-sm border border-gitlore-border bg-gitlore-surface">
+      <div className="shrink-0 border-b border-gitlore-border px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h3 className="text-sm font-medium text-gitlore-text">Chat with the knowledge graph</h3>
+          {chatStatus ? (
+            <span
+              className={`inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 font-code text-[10px] ${
+                chatStatus.geminiConfigured
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                  : "border-amber-500/40 bg-amber-500/10 text-amber-200"
+              }`}
+              title="Configured on the GitLore Backend (.env), not in the browser"
+            >
+              <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+              {chatStatus.geminiConfigured ? `Gemini: ${chatStatus.model}` : "Add GEMINI_API_KEY to Backend .env"}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-0.5 text-xs leading-relaxed text-gitlore-text-secondary">
+          Retrieval from indexed PR decisions, then <span className="text-gitlore-text/90">Gemini</span> on the server when{" "}
+          <span className="font-code">GEMINI_API_KEY</span> is set in <span className="font-code">GitLore/Backend/.env</span>.
+          Never put API keys in the frontend.
+        </p>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4">
+        {messages.length === 0 && (
+          <div className="py-6 text-center text-sm leading-relaxed text-gitlore-text-secondary">
+            Try: &ldquo;Why did we change authentication?&rdquo; or &ldquo;What refactors touched the API layer?&rdquo;
+          </div>
+        )}
+
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : ""}`}>
+            {msg.role === "assistant" && (
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gitlore-accent/20">
+                <Bot className="h-4 w-4 text-gitlore-accent" />
+              </div>
+            )}
+            <div
+              className={`max-w-[88%] rounded-sm px-3 py-2.5 text-sm ${
+                msg.role === "user"
+                  ? "bg-gitlore-accent/15 text-gitlore-text"
+                  : "bg-gitlore-code text-gitlore-text"
+              }`}
+            >
+              <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+              {msg.role === "assistant" &&
+                (msg.searchTier ||
+                  msg.nodesUsed != null ||
+                  (msg.synthesis && msg.synthesis !== "none")) && (
+                  <p className="mt-2 border-t border-gitlore-border/50 pt-2 font-code text-[10px] text-gitlore-text-secondary">
+                    {msg.synthesis && msg.synthesis !== "none" && (
+                      <span className="mr-2">
+                        {msg.synthesis === "gemini" && (
+                          <span className="text-emerald-400/90">
+                            Synthesis: Gemini{msg.model ? ` (${msg.model})` : ""}
+                          </span>
+                        )}
+                        {msg.synthesis === "fallback_no_key" && (
+                          <span className="text-amber-400/90">Synthesis: offline (no API key)</span>
+                        )}
+                        {msg.synthesis === "fallback_error" && (
+                          <span className="text-red-400/90">Synthesis: Gemini error — raw matches shown</span>
+                        )}
+                      </span>
+                    )}
+                    {msg.searchTier && msg.searchTier !== "none" && (
+                      <span>
+                        Search: <span className="text-gitlore-accent">{msg.searchTier}</span>
+                      </span>
+                    )}
+                    {msg.nodesUsed != null && (
+                      <span className={msg.searchTier && msg.searchTier !== "none" ? " · " : ""}>
+                        Nodes used: {msg.nodesUsed}
+                      </span>
+                    )}
+                  </p>
+                )}
+              {msg.sources && msg.sources.length > 0 && (
+                <div className="mt-2 border-t border-gitlore-border/60 pt-2">
+                  <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-gitlore-text-secondary">
+                    Sources
+                  </p>
+                  <ul className="space-y-1">
+                    {msg.sources.map((s) => (
+                      <li key={s.pr_number}>
+                        <a
+                          href={s.pr_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 break-words text-xs text-gitlore-accent transition-colors hover:text-gitlore-accent-hover"
+                        >
+                          <span className={TYPE_COLORS[s.type] || "text-gray-400"}>[{s.type}]</span>
+                          <span>
+                            PR #{s.pr_number}: {s.title.length > 42 ? `${s.title.slice(0, 40)}…` : s.title}
+                          </span>
+                          <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            {msg.role === "user" && (
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gitlore-surface">
+                <User className="h-4 w-4 text-gitlore-text-secondary" />
+              </div>
+            )}
+          </div>
+        ))}
+
+        {loading && (
+          <div className="flex gap-3">
+            <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gitlore-accent/20">
+              <Loader className="h-4 w-4 animate-spin text-gitlore-accent" />
+            </div>
+            <div className="rounded-sm bg-gitlore-code px-3 py-2 text-sm text-gitlore-text-secondary">
+              Searching knowledge nodes and synthesizing…
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="shrink-0 border-t border-gitlore-border p-3">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void handleSend()}
+            placeholder="Ask about decisions in this repo…"
+            disabled={loading || !repoReady}
+            className="min-w-0 flex-1 rounded-sm border border-gitlore-border bg-gitlore-code px-3 py-2 text-sm text-gitlore-text placeholder:text-gitlore-text-secondary/50 focus:border-gitlore-accent focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => void handleSend()}
+            disabled={loading || !input.trim() || !repoReady}
+            className="shrink-0 rounded-sm bg-gitlore-accent px-3 py-2 text-white transition-colors hover:bg-gitlore-accent-hover disabled:opacity-50"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

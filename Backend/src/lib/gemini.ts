@@ -387,21 +387,45 @@ export function matchAntiPattern(
   return null;
 }
 
-/**
- * Generate embedding for text (simplified - would use actual embedding in production)
- */
-export async function getEmbedding(text: string): Promise<number[]> {
-  // For MVP, return a simple hash-based vector
-  // In production, use actual embeddings API
-  const hash = text
-    .split("")
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-
-  // Generate 768-dimensional vector based on hash
-  const seed = hash;
+function hashEmbedding(text: string): number[] {
+  const hash = text.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const vector: number[] = [];
   for (let i = 0; i < 768; i++) {
-    vector.push(Math.sin((seed + i) * 0.1) * 0.5 + 0.5);
+    vector.push(Math.sin((hash + i) * 0.1) * 0.5 + 0.5);
   }
   return vector;
+}
+
+/**
+ * Embeddings for knowledge retrieval (query + stored nodes). Uses Gemini when GEMINI_API_KEY is set.
+ */
+export async function getEmbedding(text: string): Promise<number[]> {
+  const key = process.env.GEMINI_API_KEY?.trim();
+  if (!key) return hashEmbedding(text);
+
+  const chunk = text.slice(0, 8000);
+  const candidates = ["text-embedding-004", "embedding-001"];
+  for (const modelName of candidates) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const m = model as unknown as {
+        embedContent?: (
+          input: string | { content: { parts: { text: string }[] } }
+        ) => Promise<{ embedding?: { values?: number[] } }>;
+      };
+      if (typeof m.embedContent !== "function") continue;
+
+      let res: { embedding?: { values?: number[] } } | undefined;
+      try {
+        res = await m.embedContent({ content: { parts: [{ text: chunk }] } });
+      } catch {
+        res = await m.embedContent(chunk);
+      }
+      const values = res?.embedding?.values;
+      if (Array.isArray(values) && values.length > 0) return values;
+    } catch {
+      /* try next model */
+    }
+  }
+  return hashEmbedding(text);
 }

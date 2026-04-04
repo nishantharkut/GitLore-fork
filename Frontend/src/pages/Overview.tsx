@@ -1,287 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { FadeIn } from "../components/effects/FadeIn";
+import { ChatPanel } from "../components/ChatPanel";
+import { IngestButton } from "../components/IngestButton";
+import { KnowledgeDecisionsGraph } from "../components/KnowledgeDecisionsGraph";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
 import { fetchRepoOverview, fetchRepoPullRequests, type RepoOverviewResponse, type RepoPullSummary } from "@/lib/gitloreApi";
 import { startGithubOAuth as oauthNav } from "@/lib/githubOAuth";
-
-interface GraphNode {
-  id: string;
-  label: string;
-  fullName: string;
-  x: number;
-  y: number;
-  size: number;
-  color: string;
-  changes: number;
-  authors: number;
-  floatDuration: number;
-}
-
-const MIN_SCALE = 0.4;
-const MAX_SCALE = 2.75;
-const NODE_DRAG_CLICK_THRESHOLD_PX = 6;
-
-type NodeDragSession = {
-  pointerId: number;
-  nodeId: string;
-  grabDx: number;
-  grabDy: number;
-  ox: number;
-  oy: number;
-  dragged: boolean;
-};
-
-function positionsFromNodes(nodes: GraphNode[]): Record<string, { x: number; y: number }> {
-  return Object.fromEntries(nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
-}
-
-const KnowledgeGraph = ({
-  nodes,
-  edges,
-  onOpenFile,
-}: {
-  nodes: GraphNode[];
-  edges: [string, string][];
-  onOpenFile: (path: string) => void;
-}) => {
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const graphLayerRef = useRef<HTMLDivElement>(null);
-  const scaleRef = useRef(1);
-  const [scale, setScale] = useState(1);
-  const [positions, setPositions] = useState(() => positionsFromNodes(nodes));
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const dragSessionRef = useRef<NodeDragSession | null>(null);
-  const suppressNextClickRef = useRef(false);
-
-  const nodesKey = nodes.map((n) => n.id).join("|");
-  useEffect(() => {
-    setPositions(positionsFromNodes(nodes));
-    setSelected(null);
-    scaleRef.current = 1;
-    setScale(1);
-  }, [nodesKey, nodes]);
-
-  scaleRef.current = scale;
-
-  const clientToPercent = (clientX: number, clientY: number) => {
-    const layer = graphLayerRef.current;
-    if (!layer) return { x: 50, y: 50 };
-    const w = layer.offsetWidth;
-    const h = layer.offsetHeight;
-    if (w < 1 || h < 1) return { x: 50, y: 50 };
-    const rect = layer.getBoundingClientRect();
-    const s = scaleRef.current;
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const lx = w / 2 + (clientX - cx) / s;
-    const ly = h / 2 + (clientY - cy) / s;
-    return { x: (lx / w) * 100, y: (ly / h) * 100 };
-  };
-
-  const clampPct = (v: number) => Math.min(96, Math.max(4, v));
-
-  const zoomByFactor = (factor: number) => {
-    const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scaleRef.current * factor));
-    scaleRef.current = next;
-    setScale(next);
-  };
-
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scaleRef.current * factor));
-      scaleRef.current = next;
-      setScale(next);
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-
-  const endNodeDragListeners = (move: (e: PointerEvent) => void, up: (e: PointerEvent) => void) => {
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    window.removeEventListener("pointercancel", up);
-  };
-
-  const onNodePointerDown = (e: React.PointerEvent, nodeId: string) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    const { x: xPct, y: yPct } = clientToPercent(e.clientX, e.clientY);
-    const pos = positions[nodeId];
-    if (!pos) return;
-    const session: NodeDragSession = {
-      pointerId: e.pointerId,
-      nodeId,
-      grabDx: pos.x - xPct,
-      grabDy: pos.y - yPct,
-      ox: e.clientX,
-      oy: e.clientY,
-      dragged: false,
-    };
-    dragSessionRef.current = session;
-    setDraggingNodeId(nodeId);
-
-    const onMove = (ev: PointerEvent) => {
-      const s = dragSessionRef.current;
-      if (!s || ev.pointerId !== s.pointerId) return;
-      const dx = ev.clientX - s.ox;
-      const dy = ev.clientY - s.oy;
-      if (!s.dragged) {
-        if (dx * dx + dy * dy < NODE_DRAG_CLICK_THRESHOLD_PX * NODE_DRAG_CLICK_THRESHOLD_PX) return;
-        s.dragged = true;
-      }
-      const p = clientToPercent(ev.clientX, ev.clientY);
-      const nx = clampPct(p.x + s.grabDx);
-      const ny = clampPct(p.y + s.grabDy);
-      setPositions((prev) => ({ ...prev, [s.nodeId]: { x: nx, y: ny } }));
-    };
-
-    const onUp = (ev: PointerEvent) => {
-      const s = dragSessionRef.current;
-      if (!s || ev.pointerId !== s.pointerId) return;
-      endNodeDragListeners(onMove, onUp);
-      dragSessionRef.current = null;
-      setDraggingNodeId(null);
-      if (s.dragged) suppressNextClickRef.current = true;
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-  };
-
-  if (!nodes.length) {
-    return (
-      <div className="flex min-h-[200px] items-center justify-center rounded-sm bg-gitlore-code px-4 text-center text-sm text-gitlore-text-secondary">
-        No graph nodes yet. Overview uses recent commit file churn — try a busier branch or open Live repo after more activity.
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative w-full">
-      <div className="absolute right-2 top-2 z-20 flex gap-0.5 rounded-sm border border-gitlore-border bg-gitlore-bg/90 p-0.5 shadow-sm backdrop-blur-sm">
-        <button
-          type="button"
-          title="Zoom out"
-          className="rounded-sm p-1.5 text-gitlore-text-secondary transition-colors hover:bg-gitlore-surface hover:text-gitlore-text"
-          onClick={() => zoomByFactor(0.85)}
-        >
-          <ZoomOut className="h-4 w-4" aria-hidden />
-        </button>
-        <button
-          type="button"
-          title="Zoom in"
-          className="rounded-sm p-1.5 text-gitlore-text-secondary transition-colors hover:bg-gitlore-surface hover:text-gitlore-text"
-          onClick={() => zoomByFactor(1.15)}
-        >
-          <ZoomIn className="h-4 w-4" aria-hidden />
-        </button>
-        <button
-          type="button"
-          title="Reset zoom and node positions"
-          className="rounded-sm p-1.5 text-gitlore-text-secondary transition-colors hover:bg-gitlore-surface hover:text-gitlore-text"
-          onClick={() => {
-            scaleRef.current = 1;
-            setScale(1);
-            setPositions(positionsFromNodes(nodes));
-            setSelected(null);
-          }}
-        >
-          <RotateCcw className="h-4 w-4" aria-hidden />
-        </button>
-      </div>
-
-      <div
-        ref={viewportRef}
-        className="relative w-full touch-none select-none overflow-hidden rounded-sm bg-gitlore-code pb-[100%] md:pb-[80%]"
-      >
-        <div
-          ref={graphLayerRef}
-          className="absolute inset-0 will-change-transform"
-          style={{
-            transform: `scale(${scale})`,
-            transformOrigin: "center center",
-          }}
-        >
-          <svg className="pointer-events-none absolute inset-0 z-0 h-full w-full">
-            {edges.map(([a, b]) => {
-              const pa = positions[a];
-              const pb = positions[b];
-              if (!pa || !pb) return null;
-              return (
-                <line key={`${a}-${b}`} x1={`${pa.x}%`} y1={`${pa.y}%`} x2={`${pb.x}%`} y2={`${pb.y}%`} stroke="#2A2A3A" strokeWidth={1} />
-              );
-            })}
-          </svg>
-
-          {nodes.map((node) => {
-            const pos = positions[node.id];
-            if (!pos) return null;
-            return (
-              <div
-                key={node.id}
-                role="button"
-                tabIndex={0}
-                className={`overview-node absolute z-[1] flex cursor-grab items-center justify-center rounded-full border-2 transition-[box-shadow,transform] ${
-                  selected === node.id ? "ring-2 ring-gitlore-accent ring-offset-2 ring-offset-gitlore-code" : ""
-                } ${draggingNodeId === node.id ? "z-[2] cursor-grabbing" : ""}`}
-                style={{
-                  left: `${pos.x}%`,
-                  top: `${pos.y}%`,
-                  width: node.size,
-                  height: node.size,
-                  borderColor: node.color,
-                }}
-                onMouseEnter={() => setHovered(node.id)}
-                onMouseLeave={() => setHovered(null)}
-                onPointerDown={(e) => onNodePointerDown(e, node.id)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (suppressNextClickRef.current) {
-                    suppressNextClickRef.current = false;
-                    return;
-                  }
-                  setSelected(node.id);
-                  onOpenFile(node.fullName);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setSelected(node.id);
-                    onOpenFile(node.fullName);
-                  }
-                }}
-              >
-                <span className={`pointer-events-none select-none font-code text-gitlore-text ${node.size > 30 ? "text-[8px]" : "text-[7px]"}`}>
-                  {node.label}
-                </span>
-
-                {hovered === node.id && (
-                  <div className="pointer-events-none absolute bottom-full z-10 mb-2 whitespace-nowrap rounded-sm border border-gitlore-border bg-gitlore-surface px-3 py-1.5 text-[11px] shadow-md">
-                    <span className="font-code text-gitlore-text">{node.fullName}</span>
-                    <span className="text-gitlore-text-secondary">
-                      {" "}
-                      &mdash; {node.changes} line churn, {node.authors} {node.authors === 1 ? "author" : "authors"} (recent commits)
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const HealthBar = ({ score, max }: { score: number; max: number }) => (
   <div className="flex items-center gap-3">
@@ -308,6 +34,7 @@ const Overview = () => {
   const [recentPulls, setRecentPulls] = useState<RepoPullSummary[]>([]);
   const [pullsLoading, setPullsLoading] = useState(false);
   const [pullsErr, setPullsErr] = useState<string | null>(null);
+  const [refreshChat, setRefreshChat] = useState(0);
 
   useEffect(() => {
     if (!user) {
@@ -373,24 +100,6 @@ const Overview = () => {
     };
   }, [user, repoReady, target.owner, target.name]);
 
-  const graphNodes: GraphNode[] = useMemo(() => {
-    const raw = data?.knowledgeGraph?.nodes || [];
-    return raw.map((n) => ({
-      id: n.id,
-      label: n.label,
-      fullName: n.fullName,
-      x: n.x,
-      y: n.y,
-      size: n.size,
-      color: n.color,
-      changes: n.changes,
-      authors: n.authors,
-      floatDuration: n.floatDuration,
-    }));
-  }, [data]);
-
-  const graphEdges = useMemo(() => data?.knowledgeGraph?.edges || [], [data]);
-
   const onOpenFile = useCallback(
     (filePath: string) => {
       setTarget({ filePath });
@@ -398,6 +107,10 @@ const Overview = () => {
     },
     [navigate, setTarget]
   );
+
+  const stats = data?.stats;
+  const anti = data?.topAntiPatterns?.length ? data.topAntiPatterns : [];
+  const mostChanged = data?.mostChangedFiles?.length ? data.mostChangedFiles : [];
 
   if (!user) {
     return (
@@ -428,15 +141,12 @@ const Overview = () => {
     );
   }
 
-  const stats = data?.stats;
-  const anti = data?.topAntiPatterns?.length ? data.topAntiPatterns : [];
-  const mostChanged = data?.mostChangedFiles?.length ? data.mostChangedFiles : [];
-
   return (
     <div className="min-h-[calc(100vh-56px)] bg-gitlore-bg">
-      <div className="mx-auto max-w-[1200px] px-4 py-8 md:px-8 md:py-12">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-5 md:gap-8">
-          <div className="space-y-8 md:col-span-2">
+      <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-8 md:py-12">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-12 md:gap-8">
+          {/* Left Column: Stats & Info */}
+          <div className="space-y-8 md:col-span-5">
             <div>
               <div className="mb-2 text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">Repository</div>
               <h1 className="font-heading text-2xl font-bold text-gitlore-text">{repoFull}</h1>
@@ -550,17 +260,15 @@ const Overview = () => {
             </button>
           </div>
 
-          <div className="md:col-span-3">
-            <div className="mb-2 text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">Visualization</div>
-            <h2 className="mb-6 font-heading text-lg font-semibold text-gitlore-text">Hot files (commit churn)</h2>
-
-            <div className="rounded-sm border border-gitlore-border bg-gitlore-surface p-4 md:p-6">
-              <KnowledgeGraph nodes={graphNodes} edges={graphEdges} onOpenFile={onOpenFile} />
-            </div>
-
-            <p className="mt-3 text-sm leading-relaxed text-gitlore-text-secondary lg:text-xs">
-              Bubble size reflects aggregate line churn in recent commits. Edges link consecutive hotspots. Drag to rearrange; click to open in Live repo. Data comes from the GitHub API (same repo as your Live tab target: {repoFull}).
-            </p>
+          {/* Knowledge graph, ingest, chat */}
+          <div className="flex min-h-0 flex-col gap-4 md:col-span-7">
+            <KnowledgeDecisionsGraph refreshKey={refreshChat} />
+            <IngestButton
+              onComplete={() => {
+                setRefreshChat((p) => p + 1);
+              }}
+            />
+            <ChatPanel key={refreshChat} />
           </div>
         </div>
       </div>

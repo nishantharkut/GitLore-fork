@@ -299,6 +299,8 @@ async function getJSON<T>(path: string): Promise<T> {
   return data as T;
 }
 
+export { getJSON };
+
 export async function fetchRepoOverview(
   owner: string,
   name: string,
@@ -367,6 +369,66 @@ export async function fetchPullDiffReview(
 ): Promise<PullDiffReviewResponse> {
   return getJSON<PullDiffReviewResponse>(
     `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls/${pullNumber}/diff-review`
+  );
+}
+
+/** Ingested PR decision node (no embedding). */
+export type KnowledgeGraphNodeDTO = {
+  pr_number: number;
+  pr_url: string;
+  type: string;
+  title: string;
+  summary: string;
+  topics?: string[];
+  merged_at?: string;
+};
+
+export async function fetchKnowledgeGraphNodes(
+  owner: string,
+  name: string
+): Promise<{ nodes: KnowledgeGraphNodeDTO[]; count: number }> {
+  return getJSON(`/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/knowledge`);
+}
+
+/** Structured layout for the Overview knowledge graph SVG. */
+export type KnowledgeLayoutResponse = {
+  viewBox: { w: number; h: number };
+  nodes: Array<{
+    id: string;
+    kind: string;
+    label: string;
+    sublabel?: string;
+    x: number;
+    y: number;
+    r?: number;
+    color: string;
+    href?: string;
+    prType?: string;
+  }>;
+  edges: Array<{ from: string; to: string; kind: string }>;
+};
+
+export async function fetchKnowledgeLayout(
+  owner: string,
+  name: string
+): Promise<KnowledgeLayoutResponse> {
+  return getJSON(
+    `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/knowledge-layout`
+  );
+}
+
+/** Backend chat / Gemini readiness (no secrets). */
+export type ChatGraphStatusResponse = {
+  geminiConfigured: boolean;
+  model: string;
+};
+
+export async function fetchChatGraphStatus(
+  owner: string,
+  name: string
+): Promise<ChatGraphStatusResponse> {
+  return getJSON(
+    `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/chat/status`
   );
 }
 
