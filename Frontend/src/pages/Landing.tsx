@@ -1,15 +1,10 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import LandingNavbar from "../components/landing/LandingNavbar";
 import HeroSection from "../components/landing/HeroSection";
-import StatsBar from "../components/landing/StatsBar";
-import PainStatement from "../components/landing/PainStatement";
-import BentoGrid from "../components/landing/BentoGrid";
-import Comparison from "../components/landing/Comparison";
-import HowItWorks from "../components/landing/HowItWorks";
-import KnowledgeGraph from "../components/landing/KnowledgeGraph";
-import FinalCTA from "../components/landing/FinalCTA";
-import LandingFooter from "../components/landing/LandingFooter";
+import { LandingBelowFoldSkeleton } from "../components/Skeleton";
+
+const LandingBelowFold = lazy(() => import("./LandingBelowFold"));
 
 const Landing = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -37,14 +32,9 @@ const Landing = () => {
       )}
       <LandingNavbar />
       <HeroSection />
-      <StatsBar />
-      <PainStatement />
-      <BentoGrid />
-      <Comparison />
-      <HowItWorks />
-      <KnowledgeGraph />
-      <FinalCTA />
-      <LandingFooter />
+      <Suspense fallback={<LandingBelowFoldSkeleton />}>
+        <LandingBelowFold />
+      </Suspense>
     </div>
   );
 };

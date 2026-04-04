@@ -518,3 +518,73 @@
   background-color: rgba(251, 191, 36, 0.08);
   animation-duration: 4.3s;
 }
+
+/* Route transition — indeterminate bar (see PageTransitions.tsx) */
+@keyframes gitlore-nav-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.gitlore-nav-progress-bar {
+  width: 55%;
+  min-width: 180px;
+  background: linear-gradient(
+    90deg,
+    rgba(201, 168, 76, 0.05),
+    var(--accent, #c9a84c),
+    #e8c86a,
+    var(--accent, #c9a84c),
+    rgba(201, 168, 76, 0.05)
+  );
+  box-shadow: 0 0 12px rgba(201, 168, 76, 0.6);
+  transform: translateX(-100%);
+}
+
+.gitlore-nav-progress-bar--active {
+  animation: gitlore-nav-progress-slide 0.95s ease-in-out infinite;
+}
+
+/* Viewport-centered route loader (cross / square animation) */
+.gitlore-vw-loader {
+  width: 44px;
+  height: 44px;
+  position: relative;
+  /* Brand accent — high contrast on dark bg */
+  --gitlore-loader-c: no-repeat linear-gradient(var(--accent, #c9a84c) 0 0);
+  background:
+    var(--gitlore-loader-c) center/100% 10px,
+    var(--gitlore-loader-c) center/10px 100%;
+  filter: drop-shadow(0 0 10px rgba(201, 168, 76, 0.45));
+}
+
+.gitlore-vw-loader::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    var(--gitlore-loader-c) 0 0,
+    var(--gitlore-loader-c) 100% 0,
+    var(--gitlore-loader-c) 0 100%,
+    var(--gitlore-loader-c) 100% 100%;
+  background-size: 15.5px 15.5px;
+  animation: gitlore-vw-loader-l16 1.5s infinite cubic-bezier(0.3, 1, 0, 1);
+}
+
+@keyframes gitlore-vw-loader-l16 {
+  33% {
+    inset: -10px;
+    transform: rotate(0deg);
+  }
+  66% {
+    inset: -10px;
+    transform: rotate(90deg);
+  }
+  100% {
+    inset: 0;
+    transform: rotate(90deg);
+  }
+}

@@ -4,6 +4,7 @@ import { FadeIn } from "../components/effects/FadeIn";
 import { ChatPanel } from "../components/ChatPanel";
 import { IngestButton } from "../components/IngestButton";
 import { KnowledgeDecisionsGraph } from "../components/KnowledgeDecisionsGraph";
+import { CenteredLoader, OverviewSkeleton, Spinner } from "../components/Skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
 import { fetchRepoOverview, fetchRepoPullRequests, type RepoOverviewResponse, type RepoPullSummary } from "@/lib/gitloreApi";
@@ -108,10 +109,6 @@ const Overview = () => {
     [navigate, setTarget]
   );
 
-  const stats = data?.stats;
-  const anti = data?.topAntiPatterns?.length ? data.topAntiPatterns : [];
-  const mostChanged = data?.mostChangedFiles?.length ? data.mostChangedFiles : [];
-
   if (!user) {
     return (
       <div className="min-h-[calc(100vh-56px)] bg-gitlore-bg px-4 py-12 text-center">
@@ -124,11 +121,7 @@ const Overview = () => {
   }
 
   if (repoResolving) {
-    return (
-      <div className="flex min-h-[calc(100vh-56px)] items-center justify-center bg-gitlore-bg px-4">
-        <p className="text-sm text-gitlore-text-secondary">Loading your most recently updated repository…</p>
-      </div>
-    );
+    return <CenteredLoader message="Loading your most recently updated repository…" />;
   }
 
   if (!repoReady) {
@@ -140,6 +133,14 @@ const Overview = () => {
       </div>
     );
   }
+
+  if (loading && !data) {
+    return <OverviewSkeleton />;
+  }
+
+  const stats = data?.stats;
+  const anti = data?.topAntiPatterns?.length ? data.topAntiPatterns : [];
+  const mostChanged = data?.mostChangedFiles?.length ? data.mostChangedFiles : [];
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-gitlore-bg">
@@ -157,7 +158,12 @@ const Overview = () => {
             </div>
 
             {err && <p className="text-sm text-gitlore-error">{err}</p>}
-            {loading && <p className="text-sm text-gitlore-text-secondary">Loading overview from GitHub…</p>}
+            {loading && data && (
+              <p className="flex items-center gap-2 text-sm text-gitlore-text-secondary" role="status" aria-live="polite">
+                <Spinner className="h-4 w-4" label="Refreshing overview" />
+                Refreshing overview…
+              </p>
+            )}
 
             <FadeIn direction="up">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -181,7 +187,12 @@ const Overview = () => {
             <div>
               <div className="mb-3 text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">Recent pull requests</div>
               {pullsErr && <p className="mb-2 text-sm text-gitlore-error">{pullsErr}</p>}
-              {pullsLoading && <p className="text-sm text-gitlore-text-secondary">Loading PRs from GitHub…</p>}
+              {pullsLoading && (
+                <p className="mb-2 flex items-center gap-2 text-sm text-gitlore-text-secondary" role="status" aria-live="polite">
+                  <Spinner className="h-4 w-4" label="Loading pull requests" />
+                  Loading PRs from GitHub…
+                </p>
+              )}
               {!pullsLoading && !pullsErr && recentPulls.length === 0 && (
                 <p className="text-sm text-gitlore-text-secondary">No pull requests returned (empty repo or API scope).</p>
               )}

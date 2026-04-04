@@ -1,21 +1,14 @@
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
-import App from "./App.tsx";
+import { RouterProvider } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { RepoProvider } from "./context/RepoContext";
+import { router } from "./router";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
-  <BrowserRouter
-    future={{
-      v7_startTransition: true,
-      v7_relativeSplatPath: true,
-    }}
-  >
-    <AuthProvider>
-      <RepoProvider>
-        <App />
-      </RepoProvider>
-    </AuthProvider>
-  </BrowserRouter>,
+  <AuthProvider>
+    <RepoProvider>
+      <RouterProvider router={router} />
+    </RepoProvider>
+  </AuthProvider>,
 );

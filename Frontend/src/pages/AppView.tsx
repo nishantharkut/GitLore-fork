@@ -1,8 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import CodeMirror from "@uiw/react-codemirror";
-import { python } from "@codemirror/lang-python";
-import { javascript } from "@codemirror/lang-javascript";
-import { EditorView } from "@codemirror/view";
+import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import gsap from "gsap";
 import { animate as animeAnimate } from "animejs";
 import { Group, Panel, Separator, useDefaultLayout, useGroupRef } from "react-resizable-panels";
@@ -25,19 +21,12 @@ import {
 import { pathsToFileTree, type FileNode } from "@/lib/pathsToFileTree";
 import { parseUnifiedDiff, diffLinesToHunkString, type ParsedDiffLine } from "@/lib/parseUnifiedDiff";
 import { startGithubOAuth } from "@/lib/githubOAuth";
+import { CodeEditorSkeleton, DiffLoadingBlock, Spinner } from "@/components/Skeleton";
+
+const AppViewCodeEditor = lazy(() => import("./AppViewCodeEditor"));
 
 const FALLBACK_CODE = `// Select a file in the tree or set owner/repo/branch in the bar above.
 // File list is loaded from GitHub (GET /api/repo/.../index).`;
-
-function cmLanguageForPath(filePath: string) {
-  const lower = filePath.toLowerCase();
-  if (lower.endsWith(".py")) return python();
-  if (lower.endsWith(".tsx") || lower.endsWith(".ts"))
-    return javascript({ typescript: true, jsx: true });
-  if (lower.endsWith(".jsx") || lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs"))
-    return javascript({ jsx: true });
-  return javascript({ jsx: false });
-}
 
 function getBlame(_line: number): string {
   return "Git blame \u00b7 use Analyze on a line for real history";
@@ -63,33 +52,6 @@ type PanelContent =
   | { type: "error"; message: string }
   | { type: "explanation"; data: InsightExplanation }
   | { type: "narrative"; line: number; data: InsightNarrative };
-
-/* ─── CodeMirror theme ─── */
-/** `mobileSoftWrap` applies only when `mobile`; desktop always uses no-wrap + horizontal scroll. */
-function buildCmTheme(mobile: boolean, mobileSoftWrap: boolean) {
-  const fontSize = mobile ? "12px" : "13px";
-  const wrap = mobile && mobileSoftWrap;
-  return EditorView.theme({
-    "&": { backgroundColor: "#0A0A0D", color: "#EDEDEF", fontSize },
-    ".cm-content": { fontFamily: '"JetBrains Mono", monospace', padding: mobile ? "6px 0" : "8px 0" },
-    ".cm-scroller": { overflowX: wrap ? "hidden" : "auto" },
-    ".cm-gutters": { backgroundColor: "#0A0A0D", color: "#7C7C86", border: "none", minWidth: mobile ? "32px" : "40px" },
-    ".cm-lineNumbers .cm-gutterElement": {
-      padding: mobile ? "0 6px 0 2px" : "0 8px 0 4px",
-      minWidth: mobile ? "24px" : "32px",
-      cursor: "pointer",
-    },
-    ".cm-activeLine": { backgroundColor: "rgba(201, 168, 76, 0.08)" },
-    ".cm-activeLineGutter": { backgroundColor: "rgba(201, 168, 76, 0.08)" },
-    "&.cm-focused .cm-cursor": { borderLeftColor: "#C9A84C" },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": { backgroundColor: "rgba(201, 168, 76, 0.2)" },
-    ".cm-line": {
-      padding: mobile ? "0 6px" : "0 8px",
-      whiteSpace: wrap ? "pre-wrap" : "pre",
-      overflowWrap: wrap ? "anywhere" : "normal",
-    },
-  });
-}
 
 /* ─── Sub-components ─── */
 
@@ -811,15 +773,6 @@ const AppView = () => {
     setExplanationCommentId(null);
   }, [selectedPrNumber]);
 
-  const cmTheme = useMemo(() => buildCmTheme(isMobile, mobileCodeWrap), [isMobile, mobileCodeWrap]);
-  const cmExtensions = useMemo(
-    () => [
-      cmLanguageForPath(target.filePath || ""),
-      ...(isMobile && mobileCodeWrap ? [EditorView.lineWrapping] : []),
-    ],
-    [target.filePath, isMobile, mobileCodeWrap]
-  );
-
   const onSelectFile = useCallback(
     (path: string) => {
       setTarget({ filePath: path });
@@ -1183,26 +1136,17 @@ const AppView = () => {
   const selectedBlame = selectedLine ? getBlame(selectedLine) : null;
 
   const codeEditor = (
-    <div className="relative min-w-0 flex-1 min-h-0 [&_.cm-editor]:h-full [&_.cm-editor]:min-w-0">
-      {fileLoading && (
-        <div className="absolute right-2 top-2 z-10 rounded bg-gitlore-surface px-2 py-0.5 font-code text-[10px] text-gitlore-text-secondary">
-          Loading…
-        </div>
-      )}
-      <CodeMirror
+    <Suspense fallback={<CodeEditorSkeleton mobile={isMobile} />}>
+      <AppViewCodeEditor
         value={sourceCode}
-        key={`${target.filePath}-${isMobile ? `m-${mobileCodeWrap ? "wrap" : "nowrap"}` : "d"}`}
-        extensions={cmExtensions}
-        theme={cmTheme}
-        editable={false}
-        basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: true, highlightActiveLineGutter: true }}
-        onStatistics={(stats) => {
-          const line = stats.line.number;
-          if (line !== selectedLine) handleLineClickAnime(line);
-        }}
-        className="h-full min-h-[18rem] md:min-h-0"
+        filePath={target.filePath || ""}
+        isMobile={isMobile}
+        mobileCodeWrap={mobileCodeWrap}
+        fileLoading={fileLoading}
+        selectedLine={selectedLine}
+        onLineActivate={(line) => void handleLineClickAnime(line)}
       />
-    </div>
+    </Suspense>
   );
 
   const mobileRepoAccordion = (
@@ -1241,7 +1185,12 @@ const AppView = () => {
             {treeError && (
               <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{treeError}</p>
             )}
-            {treeLoading && <p className="px-2 py-1 text-xs text-gitlore-text-secondary">Loading tree…</p>}
+            {treeLoading && (
+              <p className="flex items-center gap-2 px-2 py-1 text-xs text-gitlore-text-secondary" role="status">
+                <Spinner className="h-3.5 w-3.5" label="Loading file tree" />
+                Loading tree…
+              </p>
+            )}
             {!treeLoading &&
               fileTree.map((node) => (
                 <FileTreeNode
@@ -1339,7 +1288,12 @@ const AppView = () => {
         {treeError && (
           <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{treeError}</p>
         )}
-        {treeLoading && <p className="px-2 py-1 text-xs text-gitlore-text-secondary">Loading tree…</p>}
+        {treeLoading && (
+          <p className="flex items-center gap-2 px-2 py-1 text-xs text-gitlore-text-secondary" role="status">
+            <Spinner className="h-3.5 w-3.5" label="Loading file tree" />
+            Loading tree…
+          </p>
+        )}
         {!treeLoading &&
           fileTree.map((node) => (
             <FileTreeNode
@@ -1426,7 +1380,12 @@ const AppView = () => {
 
   const repoGate =
     user && repoResolving ? (
-      <div className="flex shrink-0 items-center justify-center border-b border-gitlore-border bg-gitlore-surface px-3 py-6 text-sm text-gitlore-text-secondary">
+      <div
+        className="flex shrink-0 items-center justify-center gap-2 border-b border-gitlore-border bg-gitlore-surface px-3 py-6 text-sm text-gitlore-text-secondary"
+        role="status"
+        aria-live="polite"
+      >
+        <Spinner className="h-4 w-4" label="Loading repository" />
         Loading your most recently updated repository…
       </div>
     ) : user && !repoReady ? (
@@ -1495,7 +1454,7 @@ const AppView = () => {
             ) : (
               <div className="h-full overflow-auto p-3">
                 <div className="mb-3 text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary md:max-lg:text-[11px]">Changes</div>
-                {prDiffLoading && <p className="text-sm text-gitlore-text-secondary">Loading pull request diff…</p>}
+                {prDiffLoading && <DiffLoadingBlock />}
                 {prDiffErr && <p className="text-sm text-gitlore-error">{prDiffErr}</p>}
                 {!prDiffLoading && !prDiffErr && (
                   <DiffViewer
@@ -1559,7 +1518,7 @@ const AppView = () => {
                       <div className="min-h-0 flex-1 overflow-auto">
                         <div className="w-full min-w-0 p-3 md:p-4">
                           <div className="mb-3 text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary md:max-lg:text-[11px]">Changes</div>
-                          {prDiffLoading && <p className="text-sm text-gitlore-text-secondary">Loading pull request diff…</p>}
+                          {prDiffLoading && <DiffLoadingBlock />}
                           {prDiffErr && <p className="text-sm text-gitlore-error">{prDiffErr}</p>}
                           {!prDiffLoading && !prDiffErr && (
                             <DiffViewer

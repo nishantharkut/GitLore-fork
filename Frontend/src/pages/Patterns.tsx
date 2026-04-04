@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { FadeIn } from "../components/effects/FadeIn";
+import { CenteredLoader, RepoPatternCardsSkeleton, Spinner } from "../components/Skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
 import { fetchRepoOverview, type RepoOverviewResponse } from "@/lib/gitloreApi";
@@ -129,11 +130,7 @@ const Patterns = () => {
   );
 
   if (user && repoResolving) {
-    return (
-      <div className="flex min-h-[calc(100vh-56px)] items-center justify-center bg-gitlore-bg px-4">
-        <p className="text-sm text-gitlore-text-secondary">Loading your most recently updated repository…</p>
-      </div>
-    );
+    return <CenteredLoader message="Loading your most recently updated repository…" />;
   }
 
   if (user && !repoReady) {
@@ -181,7 +178,12 @@ const Patterns = () => {
             <div className="text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">
               This repository (from cached reviews)
             </div>
-            {overviewLoading && <span className="text-xs text-gitlore-text-secondary">Loading…</span>}
+            {overviewLoading && (
+              <span className="flex items-center gap-1.5 text-xs text-gitlore-text-secondary" role="status">
+                <Spinner className="h-3.5 w-3.5" label="Loading repository patterns" />
+                Loading…
+              </span>
+            )}
           </div>
           <input
             type="text"
@@ -192,12 +194,14 @@ const Patterns = () => {
           />
           <FadeIn direction="up">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {overviewLoading && <RepoPatternCardsSkeleton />}
               {!overviewLoading && filteredRepoAnti.length === 0 && (
                 <p className="col-span-full text-sm text-gitlore-text-secondary">
                   No cached pattern themes yet. Use <span className="text-gitlore-text">Explain</span> on PR review comments or line analyze in Live repo; results aggregate here.
                 </p>
               )}
-              {filteredRepoAnti.map((item) => (
+              {!overviewLoading &&
+                filteredRepoAnti.map((item) => (
                 <div
                   key={item.text}
                   className="flex flex-col rounded-sm border border-gitlore-border bg-gitlore-surface p-4"
