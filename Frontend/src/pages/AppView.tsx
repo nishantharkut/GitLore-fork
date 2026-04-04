@@ -391,42 +391,314 @@ const StoryTimeline = ({ dots }: { dots: TimelineDot[] }) => {
   );
 };
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  pr_review: "PR review",
+  pr_comment: "PR discussion",
+  inline_review: "Code review",
+  issue_comment: "Issue thread",
+  commit_message: "Commit",
+  unknown: "Source",
+};
+
+const SIGNAL_ICONS: Record<string, string> = {
+  git_blame: "⎔",
+  pull_request: "⑂",
+  review_comments: "✎",
+  pr_discussion: "💬",
+  linked_issues: "◉",
+  commit_message_only: "›",
+  pattern_match: "⚡",
+};
+
 const NarrativePanel = ({ narrative, line }: { narrative: InsightNarrative | null; line: number | null }) => {
   if (!narrative) {
     return (
-      <div className="flex h-full items-center justify-center p-8">
-        <p className="text-center font-body text-sm leading-relaxed text-gitlore-text-secondary">Click a line to see its story</p>
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="opacity-30">
+          <rect x="6" y="10" width="36" height="28" rx="3" stroke="currentColor" strokeWidth="1.5" className="text-gitlore-text-secondary" />
+          <line x1="12" y1="18" x2="36" y2="18" stroke="currentColor" strokeWidth="1.5" className="text-gitlore-accent" strokeOpacity="0.5" />
+          <line x1="12" y1="24" x2="30" y2="24" stroke="currentColor" strokeWidth="1.5" className="text-gitlore-text-secondary" />
+          <line x1="12" y1="30" x2="33" y2="30" stroke="currentColor" strokeWidth="1.5" className="text-gitlore-text-secondary" />
+          <circle cx="40" cy="10" r="5" fill="currentColor" className="text-gitlore-accent" fillOpacity="0.3" />
+        </svg>
+        <div className="text-center">
+          <p className="font-body text-sm font-medium text-gitlore-text-secondary">Click any line number</p>
+          <p className="mt-1 font-body text-xs text-gitlore-text-secondary/60">to uncover the story behind the code</p>
+        </div>
       </div>
     );
   }
+
+  const confLevel = narrative.confidence;
+  const confColor = confLevel === "HIGH" ? "#2ECC71" : confLevel === "MEDIUM" ? "#C9A84C" : "#666";
+  const confGlow = confLevel === "HIGH" ? "0 0 8px rgba(46,204,113,0.3)" : confLevel === "MEDIUM" ? "0 0 8px rgba(201,168,76,0.3)" : "none";
+
   return (
-    <div className="space-y-5 p-4 font-body md:p-5">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-base font-semibold leading-snug text-gitlore-text">{narrative.oneLiner}</p>
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-gitlore-border px-2 py-0.5 text-xs font-medium text-gitlore-success">
-          <span className="h-1.5 w-1.5 rounded-full bg-gitlore-success" />
-          {narrative.confidence}
-        </span>
+    <div className="flex flex-col font-body" style={{ maxHeight: "100%", overflowY: "auto" }}>
+      {/* ── Gradient accent bar ── */}
+      <div
+        style={{
+          height: 3,
+          background: confLevel === "HIGH"
+            ? "linear-gradient(90deg, #2ECC71, #27AE60)"
+            : confLevel === "MEDIUM"
+              ? "linear-gradient(90deg, #C9A84C, #F39C12)"
+              : "linear-gradient(90deg, #555, #444)",
+        }}
+      />
+
+      <div className="space-y-4 p-4 md:p-5">
+        {/* ── Header ── */}
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold leading-snug text-gitlore-text">{narrative.oneLiner}</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-gitlore-text-secondary">
+              {line !== null && (
+                <span className="inline-flex items-center gap-1">
+                  <span style={{ color: confColor, fontSize: 10 }}>●</span>
+                  Line {line}
+                </span>
+              )}
+              {narrative.confidenceReason && (
+                <>
+                  <span className="text-gitlore-border/40">·</span>
+                  <span>{narrative.confidenceReason}</span>
+                </>
+              )}
+            </div>
+          </div>
+          <span
+            className="inline-flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-[11px] font-bold tracking-wide"
+            style={{
+              color: confColor,
+              background: `${confColor}15`,
+              border: `1px solid ${confColor}30`,
+              boxShadow: confGlow,
+            }}
+            title={narrative.confidenceReason || `Confidence: ${narrative.confidence}`}
+          >
+            {narrative.confidence}
+          </span>
+        </div>
+
+        {/* ── Timeline ── */}
+        <StoryTimeline dots={narrative.timeline} />
+
+        {/* ── Context ── */}
+        {narrative.context && (
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <span style={{ fontSize: 10, color: "#C9A84C" }}>◆</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gitlore-text-secondary">Context</span>
+            </div>
+            <p className="text-[13px] leading-relaxed text-gitlore-text/90">{narrative.context}</p>
+          </div>
+        )}
+
+        {/* ── The Debate ── */}
+        {narrative.debate && (
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <span style={{ fontSize: 10, color: "#E74C3C" }}>◆</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gitlore-text-secondary">The Debate</span>
+            </div>
+            <p className="text-[13px] leading-relaxed text-gitlore-text/90">{narrative.debate}</p>
+          </div>
+        )}
+
+        {/* ── Debate Quotes ── */}
+        {narrative.debateQuotes.length > 0 && (
+          <div className="space-y-2">
+            {narrative.debateQuotes.map((q, i) => (
+              <div
+                key={`quote-${i}`}
+                className="relative overflow-hidden rounded"
+                style={{
+                  background: "linear-gradient(135deg, rgba(201,168,76,0.06), rgba(30,30,46,0.4))",
+                  border: "1px solid rgba(201,168,76,0.15)",
+                }}
+              >
+                {/* Left accent bar */}
+                <div
+                  className="absolute left-0 top-0 bottom-0 w-[3px]"
+                  style={{
+                    background: q.sourceType === "pr_review" ? "#C9A84C"
+                      : q.sourceType === "inline_review" ? "#9B59B6"
+                      : q.sourceType === "issue_comment" ? "#2ECC71"
+                      : "#F39C12",
+                  }}
+                />
+                <div className="px-3.5 py-2.5 pl-4">
+                  <p className="text-[13px] leading-relaxed text-gitlore-text" style={{ fontStyle: "italic" }}>
+                    "{q.text}"
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                      style={{ background: "rgba(201,168,76,0.15)", color: "#C9A84C" }}
+                    >
+                      @{q.author}
+                    </span>
+                    <span className="text-[10px] text-gitlore-text-secondary/60">
+                      {SOURCE_TYPE_LABELS[q.sourceType] || q.sourceType || "Source"}
+                    </span>
+                    {q.url && (
+                      <a
+                        href={q.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-medium transition-colors"
+                        style={{ color: "#C9A84C" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = "#F39C12")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#C9A84C")}
+                      >
+                        view on GitHub →
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Decision + Impact cards ── */}
+        <div className="grid grid-cols-1 gap-2">
+          {narrative.decision && (
+            <div
+              className="rounded px-3.5 py-2.5"
+              style={{
+                background: "linear-gradient(135deg, rgba(201,168,76,0.08), rgba(201,168,76,0.02))",
+                border: "1px solid rgba(201,168,76,0.2)",
+              }}
+            >
+              <div className="mb-1 flex items-center gap-1.5">
+                <span style={{ fontSize: 8, color: "#C9A84C" }}>▶</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#C9A84C" }}>Decision</span>
+              </div>
+              <div className="text-[13px] leading-relaxed text-gitlore-text/90">{narrative.decision}</div>
+            </div>
+          )}
+
+          {narrative.impact && (
+            <div
+              className="rounded px-3.5 py-2.5"
+              style={{
+                background: "linear-gradient(135deg, rgba(46,204,113,0.08), rgba(46,204,113,0.02))",
+                border: "1px solid rgba(46,204,113,0.2)",
+              }}
+            >
+              <div className="mb-1 flex items-center gap-1.5">
+                <span style={{ fontSize: 8, color: "#2ECC71" }}>▶</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#2ECC71" }}>Impact</span>
+              </div>
+              <div className="text-[13px] leading-relaxed text-gitlore-text/90">{narrative.impact}</div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Sources + Data Signals ── */}
+        <div
+          className="rounded px-3.5 py-3"
+          style={{ background: "rgba(26,26,42,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}
+        >
+          {/* Source links */}
+          {(narrative.sources.prUrl || narrative.sources.issueUrls.length > 0) && (
+            <div className="mb-2.5 flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gitlore-text-secondary/60">Sources</span>
+              {narrative.sources.prUrl && (
+                <a
+                  href={narrative.sources.prUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all"
+                  style={{
+                    background: "rgba(201,168,76,0.1)",
+                    border: "1px solid rgba(201,168,76,0.25)",
+                    color: "#C9A84C",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(201,168,76,0.2)";
+                    e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(201,168,76,0.1)";
+                    e.currentTarget.style.borderColor = "rgba(201,168,76,0.25)";
+                  }}
+                >
+                  <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M7.177 3.073L9.573.677A3.214 3.214 0 0114.1.677a3.214 3.214 0 010 4.528l-2.396 2.396a.5.5 0 01-.707-.707l2.396-2.396a2.214 2.214 0 00-3.132-3.132L7.865 3.762a.5.5 0 01-.688-.689z"/><path fillRule="evenodd" d="M8.823 12.927l-2.396 2.396a3.214 3.214 0 01-4.528-4.528l2.396-2.396a.5.5 0 01.707.707L2.606 11.502a2.214 2.214 0 003.132 3.132l2.396-2.396a.5.5 0 01.689.689z"/><path fillRule="evenodd" d="M6.354 10.354a.5.5 0 010-.708l3.292-3.293a.5.5 0 01.708.708l-3.293 3.293a.5.5 0 01-.707 0z"/></svg>
+                  Pull Request
+                </a>
+              )}
+              {narrative.sources.issueUrls.map((url, i) => (
+                <a
+                  key={`issue-${i}`}
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all"
+                  style={{
+                    background: "rgba(46,204,113,0.1)",
+                    border: "1px solid rgba(46,204,113,0.25)",
+                    color: "#2ECC71",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(46,204,113,0.2)";
+                    e.currentTarget.style.borderColor = "rgba(46,204,113,0.5)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(46,204,113,0.1)";
+                    e.currentTarget.style.borderColor = "rgba(46,204,113,0.25)";
+                  }}
+                >
+                  <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1" fill="none"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>
+                  Issue #{url.split("/").pop()}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* Data signal tags */}
+          {narrative.sources.dataSignals.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {narrative.sources.dataSignals.map((signal) => (
+                <span
+                  key={signal}
+                  className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium"
+                  style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)" }}
+                >
+                  <span style={{ fontSize: 10 }}>{SIGNAL_ICONS[signal] || "·"}</span>
+                  {signal.replace(/_/g, " ")}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Listen button ── */}
+        <button
+          type="button"
+          className="group inline-flex items-center gap-2 rounded px-4 py-2 text-sm font-medium transition-all"
+          style={{
+            background: "linear-gradient(135deg, rgba(201,168,76,0.1), rgba(201,168,76,0.05))",
+            border: "1px solid rgba(201,168,76,0.3)",
+            color: "#C9A84C",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "linear-gradient(135deg, rgba(201,168,76,0.2), rgba(201,168,76,0.1))";
+            e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "linear-gradient(135deg, rgba(201,168,76,0.1), rgba(201,168,76,0.05))";
+            e.currentTarget.style.borderColor = "rgba(201,168,76,0.3)";
+          }}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M12 6.253v11.494M18.364 5.636a9 9 0 010 12.728M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728" />
+          </svg>
+          Listen to this story
+        </button>
       </div>
-      {line !== null && <div className="text-xs text-gitlore-text-secondary">Line {line} · narrative</div>}
-      <StoryTimeline dots={narrative.timeline} />
-      <div>
-        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-gitlore-text-secondary">The debate</div>
-        <p className="text-sm leading-relaxed text-gitlore-text">{narrative.debate}</p>
-      </div>
-      <div className="rounded-sm border border-gitlore-success/20 bg-gitlore-success/10 px-3 py-2.5">
-        <div className="mb-1 text-[11px] font-medium text-gitlore-success">Impact</div>
-        <div className="text-sm leading-relaxed text-gitlore-text">{narrative.impact}</div>
-      </div>
-      <button
-        type="button"
-        className="inline-flex items-center gap-2 rounded-sm border border-gitlore-accent px-4 py-2 text-sm font-medium text-gitlore-accent transition-colors hover:bg-gitlore-accent/10"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M12 6.253v11.494M18.364 5.636a9 9 0 010 12.728M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728" />
-        </svg>
-        Listen
-      </button>
     </div>
   );
 };

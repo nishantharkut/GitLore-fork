@@ -10,10 +10,24 @@ export interface MeResponse {
 
 export interface InsightNarrative {
   oneLiner: string;
+  context: string;
   timeline: Array<{ color: string; label: string; sublabel: string; date: string }>;
   debate: string;
+  debateQuotes: Array<{
+    author: string;
+    text: string;
+    sourceType: string;
+    url: string;
+  }>;
+  decision: string;
   impact: string;
   confidence: "HIGH" | "MEDIUM" | "LOW";
+  confidenceReason: string;
+  sources: {
+    prUrl?: string;
+    issueUrls: string[];
+    dataSignals: string[];
+  };
 }
 
 export interface InsightExplanation {
@@ -45,8 +59,32 @@ export function narrativeFromAnalyzeApi(raw: Record<string, unknown>): InsightNa
     (raw.one_liner as string) ||
     (raw.oneLiner as string) ||
     "No summary available.";
-  const debate = (raw.debate as string) || (raw.context as string) || "";
-  const impact = (raw.impact as string) || (raw.decision as string) || "";
+  const context = (raw.context as string) || "";
+  const debate = (raw.debate as string) || "";
+  const decision = (raw.decision as string) || "";
+  const impact = (raw.impact as string) || "";
+  const confidenceReason = (raw.confidence_reason as string) || "";
+
+  // ── Parse debate_quotes ────────────────────────────────────────────────
+  const rawQuotes = raw.debate_quotes as Array<Record<string, unknown>> | undefined;
+  const debateQuotes = (rawQuotes || [])
+    .filter((q) => q.text && typeof q.text === "string" && (q.text as string).trim())
+    .map((q) => ({
+      author: (q.author as string) || "unknown",
+      text: (q.text as string),
+      sourceType: (q.source_type as string) || "unknown",
+      url: (q.url as string) || "",
+    }));
+
+  // ── Parse sources ──────────────────────────────────────────────────────
+  const rawSources = raw.sources as Record<string, unknown> | undefined;
+  const sources = {
+    prUrl: (rawSources?.pr_url as string) || undefined,
+    issueUrls: (rawSources?.issue_urls as string[]) || [],
+    dataSignals: (rawSources?.data_signals as string[]) || [],
+  };
+
+  // ── Parse timeline ─────────────────────────────────────────────────────
   const rawTimeline = raw.timeline as Array<Record<string, unknown>> | undefined;
   const timeline =
     rawTimeline?.map((item, i) => {
@@ -75,12 +113,13 @@ export function narrativeFromAnalyzeApi(raw: Record<string, unknown>): InsightNa
         };
       }
       if (type === "issue") {
+        const num = item.number as number;
         const title = (item.title as string) || "Issue";
         const date = (item.date as string) || "";
         return {
           color,
-          label: trunc(title, 28),
-          sublabel: "Issue",
+          label: num ? `Issue #${num}` : trunc(title, 28),
+          sublabel: num ? trunc(title, 36) : "Issue",
           date: date ? new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "",
         };
       }
@@ -103,10 +142,15 @@ export function narrativeFromAnalyzeApi(raw: Record<string, unknown>): InsightNa
 
   return {
     oneLiner: one,
+    context,
     timeline,
     debate,
+    debateQuotes,
+    decision,
     impact,
     confidence: confUpper(raw.confidence as string),
+    confidenceReason,
+    sources,
   };
 }
 
