@@ -127,6 +127,8 @@ export type AgenticChatArgs = {
   question: string;
   ingestNote: string;
   geminiModel: string;
+  /** Shorter side-panel style answers */
+  concise?: boolean;
 };
 
 export async function agenticKnowledgeChat(
@@ -143,6 +145,7 @@ export async function agenticKnowledgeChat(
     question,
     ingestNote,
     geminiModel,
+    concise = false,
   } = args;
 
   const gql = createGithubClient(accessToken);
@@ -308,14 +311,21 @@ ${toolJson}
 User question:
 ${question}
 
-Write a clear, structured answer in markdown-friendly plain text.`;
+Write a clear, structured answer in markdown-friendly plain text.${
+    concise
+      ? " Keep it SHORT: max ~220 words, 3–6 bullets or two brief paragraphs, no Mermaid, no long essay."
+      : ""
+  }`;
 
   const ai = getGoogleGenAI();
   const synthRes = await withGemini429Retry(() =>
     ai.models.generateContent({
       model: GEMINI_GENERATION_MODEL,
       contents: synthPrompt,
-      config: { temperature: 0.35, maxOutputTokens: 4096 },
+      config: {
+        temperature: 0.35,
+        maxOutputTokens: concise ? 1536 : 4096,
+      },
     })
   );
   let answer = synthRes.text || "Unable to synthesize an answer.";

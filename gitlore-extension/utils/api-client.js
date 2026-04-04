@@ -46,3 +46,10 @@ export function connectChatStream(body) {
   });
   return port;
 }
+
+export {
+  platformExchange,
+  platformStartRepo,
+  platformIngestStatus,
+  platformChat,
+} from "./github-api.js";
