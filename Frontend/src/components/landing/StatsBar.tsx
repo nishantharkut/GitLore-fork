@@ -1,75 +1,35 @@
-import { useRef, useEffect, useState } from "react";
-import { animate } from "animejs";
-
-const labels = [
-  "reference pattern examples",
-  "average context assembly",
-  "competitors built for review receivers",
+const stats = [
+  { value: "30+", label: "API endpoints" },
+  { value: "768-dim", label: "vector embeddings" },
+  { value: "3-tier", label: "search pipeline" },
+  { value: "6", label: "Gemini prompts" },
+  { value: "8", label: "Gemini integrations across the platform" },
 ];
 
 const StatsBar = () => {
-  const sectionRef = useRef<HTMLElement>(null);
-  const [nums, setNums] = useState<[string, string, string]>(["0", "0s", "0"]);
-  const [countStarted, setCountStarted] = useState(false);
-
-  useEffect(() => {
-    const section = sectionRef.current;
-    if (!section || countStarted) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry.isIntersecting) return;
-        observer.disconnect();
-        setCountStarted(true);
-        const o0 = { v: 0 };
-        const o1 = { v: 0 };
-        const o2 = { v: 0 };
-        animate(o0, {
-          v: 10,
-          duration: 800,
-          ease: "outExpo",
-          onUpdate: () => setNums((p) => [`${Math.round(o0.v)}`, p[1], p[2]]),
-        });
-        animate(o1, {
-          v: 3,
-          duration: 800,
-          ease: "outExpo",
-          onUpdate: () => setNums((p) => [p[0], `${o1.v.toFixed(0)}s`, p[2]]),
-        });
-        animate(o2, {
-          v: 0,
-          duration: 800,
-          ease: "outExpo",
-          onUpdate: () => setNums((p) => [p[0], p[1], `${Math.round(o2.v)}`]),
-        });
-      },
-      { root: null, rootMargin: "0px", threshold: 0.2 },
-    );
-
-    observer.observe(section);
-    return () => observer.disconnect();
-  }, [countStarted]);
-
   return (
-    <section ref={sectionRef} className="border-y border-[var(--border)] bg-[var(--surface)] py-20 md:py-28">
-      <div className="landing-container">
-        <div className="grid grid-cols-1 md:grid-cols-3">
-          {labels.map((label, i) => (
-            <div
-              key={label}
-              className={`flex flex-col px-4 py-8 md:px-10 md:py-6 ${i < labels.length - 1 ? "border-b md:border-b-0 md:border-r" : ""}`}
-              
-            >
-              <span
-                className="font-heading text-[48px] font-bold leading-none tracking-[-0.04em] text-[var(--accent)] tabular-nums md:text-[72px]"
+    <section className="relative overflow-hidden border-y border-[var(--border)] bg-[var(--bg)] py-16 md:py-20">
+      <div
+        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-[var(--accent-dim)]/50 to-transparent opacity-60"
+        aria-hidden
+      />
+      <div className="landing-container relative">
+        <div className="landing-glass-panel px-4 py-10 md:px-10 md:py-12">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-10 sm:grid-cols-2 md:grid-cols-3 lg:flex lg:flex-nowrap lg:justify-between lg:gap-0">
+            {stats.map((s, i) => (
+              <div
+                key={s.label}
+                className={`flex flex-col items-center text-center lg:min-w-0 lg:flex-1 ${i > 0 ? "lg:border-l lg:border-[var(--border)]/50 lg:pl-6" : ""}`}
               >
-                {nums[i]}
-              </span>
-              <span className="font-body mt-1 text-[13px] font-normal text-[var(--text-secondary)]">
-                {label}
-              </span>
-            </div>
-          ))}
+                <span className="font-heading text-[clamp(1.85rem,4.2vw,2.65rem)] font-bold leading-none tracking-[-0.04em] text-[var(--accent)] drop-shadow-[0_0_28px_var(--accent-glow)]">
+                  {s.value}
+                </span>
+                <span className="mt-3 max-w-[12rem] font-body text-[12px] font-normal leading-snug text-[var(--text-secondary)] md:text-[13px]">
+                  {s.label}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>

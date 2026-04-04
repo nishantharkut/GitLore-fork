@@ -328,14 +328,18 @@ const HeroProductDemo = () => {
       ref={editorRef}
       className="hero-demo-frame relative z-0 w-full max-w-[960px] overflow-hidden rounded-[10px] border border-[var(--border-strong)] bg-[var(--surface)] shadow-[0_0_0_1px_var(--border),0_40px_80px_rgba(0,0,0,0.5)]"
     >
-      <div className="flex h-10 items-center justify-between border-b border-[var(--border)] bg-[var(--elevated)] px-4">
-        <div className="flex gap-1.5">
+      <div className="flex h-10 min-w-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--elevated)] px-2 sm:gap-3 sm:px-4">
+        <div className="flex shrink-0 gap-1.5">
           <span className="h-[9px] w-[9px] rounded-full bg-[#FF5F57]" />
           <span className="h-[9px] w-[9px] rounded-full bg-[#FEBC2E]" />
           <span className="h-[9px] w-[9px] rounded-full bg-[#28C840]" />
         </div>
-        <span className="font-code text-[11px] font-normal tracking-[0.01em] text-[var(--text-ghost)]">gitlore-demo-fintech / rate_limiter.py</span>
-        <span className="hidden font-code text-[11px] font-normal tracking-[0.01em] text-[var(--text-ghost)] sm:inline">PR #2 - Add rate limiting</span>
+        <span className="min-w-0 flex-1 truncate text-center font-code text-[10px] font-normal tracking-[0.01em] text-[var(--text-ghost)] sm:text-left sm:text-[11px]">
+          gitlore-demo-fintech / rate_limiter.py
+        </span>
+        <span className="hidden max-w-[42%] shrink-0 truncate font-code text-[10px] font-normal tracking-[0.01em] text-[var(--text-ghost)] sm:inline sm:text-[11px]">
+          PR #2 - Add rate limiting
+        </span>
       </div>
 
       {isNarrow && mobileOpen && (

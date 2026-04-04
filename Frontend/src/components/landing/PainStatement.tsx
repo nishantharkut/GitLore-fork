@@ -1,63 +1,66 @@
 import { FadeIn } from "../effects/FadeIn";
 
-/**
- * Editorial pain beat: narrow context rail + dominant pull-quote + consequence + gold GitLore payoff.
- * Surfaces only - bordered frame, no gradients. Error color reserved for the review fragment.
- */
+const columns = [
+  {
+    title: "Senior leaves, knowledge leaves too.",
+    body: "3 years of decisions about why the auth system works the way it does — gone when someone moves on.",
+  },
+  {
+    title: "New developer, zero context.",
+    body: "They touch the caching layer without knowing the team debated Redis vs Memcached for two weeks in PR #47.",
+  },
+  {
+    title: "Buried in 500 PRs.",
+    body: "The answer exists in a PR comment from 18 months ago. Good luck finding it.",
+  },
+];
+
 const PainStatement = () => {
   return (
-    <section className="border-y border-[var(--border)] bg-[var(--surface)]">
+    <section id="problem" className="relative overflow-hidden border-y border-[var(--border)] bg-[var(--surface)]/80 py-20 backdrop-blur-[2px] md:py-28 lg:py-32">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.45]"
+        style={{
+          background: "radial-gradient(ellipse 55% 40% at 30% 0%, var(--accent-dim), transparent 50%)",
+        }}
+        aria-hidden
+      />
       <FadeIn direction="up">
-        <div className="landing-container py-24 md:py-32 lg:py-40">
-          <div className="mx-auto max-w-[1040px]">
-            <div className="section-label">
-              <p>Sound familiar</p>
-            </div>
+        <div className="landing-container relative">
+          <div className="section-label">
+            <p>The problem</p>
+          </div>
+          <h2 className="max-w-[720px] font-heading text-[clamp(1.75rem,4vw,2.85rem)] font-bold leading-[1.08] tracking-[-0.04em] text-[var(--text)]">
+            The Decision Shadow
+          </h2>
 
-            <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)] lg:gap-x-14 lg:gap-y-0">
-              {/* Rail: setup (+ "Two words" only on large screens, bottom-aligned) */}
-              <aside className="flex min-h-0 flex-col lg:border-r lg:border-[var(--border)] lg:pr-10">
-                <span className="font-code text-[10px] font-medium uppercase tracking-[3px] text-[var(--text-ghost)]">01 - The review</span>
-                <div className="mt-5 hidden h-px w-8 bg-[var(--accent)] lg:block" aria-hidden />
-                <div className="mt-6 space-y-1 lg:mt-10">
-                  <p className="font-heading text-[18px] font-medium leading-snug tracking-[-0.02em] text-[var(--text-secondary)] md:text-[20px]">
-                    You get a code review.
-                  </p>
-                  <p className="font-heading text-[18px] font-medium leading-snug tracking-[-0.02em] text-[var(--text-secondary)] md:text-[20px]">
-                    It says
-                  </p>
-                </div>
-                <p className="font-heading mt-8 hidden max-w-[15rem] text-[15px] font-normal leading-relaxed tracking-[-0.01em] text-[var(--text-ghost)] lg:mt-auto lg:block lg:pt-12 lg:text-[16px]">
-                  Two words. No explanation.
-                </p>
-              </aside>
-
-              {/* Main column: quote -> mobile aftermath -> cost -> payoff */}
-              <div className="min-w-0">
-                <blockquote className="pain-pull-quote m-0 border-none p-0 font-heading text-[clamp(2.75rem,_11vw,_5.25rem)] font-bold leading-[0.9] tracking-[-0.06em] text-[var(--error)]">
-                  <span className="text-[0.55em] font-semibold text-[var(--error)] opacity-90 [vertical-align:0.12em]">&lsquo;</span>
-                  memory leak.
-                  <span className="text-[0.55em] font-semibold text-[var(--error)] opacity-90 [vertical-align:0.12em]">&rsquo;</span>
-                </blockquote>
-
-                <p className="font-heading mt-3 text-[15px] font-normal leading-relaxed tracking-[-0.01em] text-[var(--text-ghost)] lg:hidden">
-                  Two words. No explanation.
-                </p>
-
-                <div className="mt-8 max-w-[540px] border-l-2 border-[var(--error-dim)] pl-5 md:mt-10 md:pl-6">
-                  <p className="font-body text-[15px] leading-[1.8] text-[var(--text-secondary)] md:text-[16px]">
-                    You spend 30 minutes Googling, copy-pasting into ChatGPT, or pinging your senior on Slack.
-                  </p>
-                </div>
-
-                <div className="mt-10 max-w-[560px] rounded-sm border border-[var(--border)] bg-[var(--elevated)] px-5 py-5 md:mt-12 md:px-6 md:py-6">
-                  <p className="font-heading text-[clamp(1.375rem,3.5vw,2rem)] font-semibold leading-tight tracking-[-0.03em]">
-                    <span className="text-[var(--accent)]">GitLore</span>
-                    <span className="text-[var(--text)]"> does it in one click.</span>
-                  </p>
-                </div>
+          <div className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-3 md:gap-5 lg:gap-6">
+            {columns.map((col, i) => (
+              <div
+                key={col.title}
+                className="group relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--elevated)]/90 p-6 shadow-[0_16px_48px_-20px_rgba(0,0,0,0.35)] transition-all duration-300 hover:border-[var(--border-accent)] hover:shadow-[0_24px_56px_-16px_rgba(0,0,0,0.4)] md:px-7 md:py-7"
+              >
+                <span
+                  className="pointer-events-none absolute right-3 top-3 select-none font-heading text-[2.25rem] font-bold leading-none text-[var(--text-ghost)]/25 transition-colors duration-300 group-hover:text-[var(--accent)]/30 md:right-4 md:top-4 md:text-[3rem]"
+                  aria-hidden
+                >
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--accent)]/25 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden />
+                <h3 className="relative pe-[3.25rem] font-heading text-[17px] font-semibold leading-snug tracking-[-0.02em] text-[var(--text)] md:pe-[3.5rem] md:text-[18px]">
+                  {col.title}
+                </h3>
+                <p className="relative mt-3 font-body text-[14px] font-normal leading-[1.75] text-[var(--text-secondary)]">{col.body}</p>
               </div>
-            </div>
+            ))}
+          </div>
+
+          <div className="mx-auto mt-16 max-w-[840px] rounded-2xl border border-[var(--border-accent)]/35 bg-[color-mix(in_srgb,var(--surface)_65%,var(--elevated))] px-5 py-8 text-left shadow-[0_0_48px_-20px_var(--accent-glow)] backdrop-blur-md sm:px-8 sm:text-center md:mt-20 md:px-10 md:py-10">
+            <p className="font-body text-[15px] leading-[1.85] text-[color-mix(in_srgb,var(--text)_88%,var(--text-secondary))] md:text-[16px] md:leading-[1.9]">
+              git blame tells you <span className="font-semibold text-[var(--text)]">WHO</span>. Copilot tells you <span className="font-semibold text-[var(--text)]">WHAT</span>. GitLens shows you{" "}
+              <span className="font-semibold text-[var(--text)]">WHEN</span>. <span className="font-semibold text-[var(--text)]">Nobody tells you WHY.</span>{" "}
+              <span className="bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)] bg-clip-text font-semibold text-transparent">GitLore does.</span>
+            </p>
           </div>
         </div>
       </FadeIn>
