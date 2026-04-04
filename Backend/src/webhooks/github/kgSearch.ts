@@ -69,7 +69,18 @@ export async function searchKnowledgeForPrTitle(
       .filter((x) => x.score > SCORE_MIN && x.one_liner);
     if (out.length > 0) return out.slice(0, 5);
   } catch (e) {
-    console.warn("[webhook] hybridDecisionSearch failed, using cosine fallback:", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    const atlasHybrid =
+      /\$rankFusion|rankFusion|AtlasError|code:\s*8000/i.test(msg) ||
+      (typeof (e as { codeName?: string })?.codeName === "string" &&
+        (e as { codeName: string }).codeName === "AtlasError");
+    if (atlasHybrid) {
+      console.warn(
+        "[webhook] Atlas $rankFusion hybrid search not available on this cluster — using cosine KG fallback."
+      );
+    } else {
+      console.warn("[webhook] hybridDecisionSearch failed, using cosine fallback:", msg);
+    }
   }
 
   const fallback = await cosineFallbackKg(db, repoKey, embedding);

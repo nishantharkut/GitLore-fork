@@ -9,7 +9,12 @@ webhookRouter.post("/github", async (c) => {
   const sig = c.req.header("x-hub-signature-256");
   const v = verifyGithubWebhookSignature(rawBody, sig);
   if (!v.ok) {
-    const msg = v.reason === "invalid_signature" ? "Invalid signature" : "Unauthorized";
+    const msg =
+      v.reason === "invalid_signature"
+        ? "Invalid signature"
+        : v.reason === "missing_secret"
+          ? "Webhook signing secret not configured"
+          : "Unauthorized";
     return c.json({ error: msg }, 401);
   }
 

@@ -630,6 +630,7 @@ export function matchAntiPattern(
 /**
  * Comma-separated in GEMINI_EMBEDDING_MODELS.
  * Default order for @google/genai embedContent (see https://ai.google.dev/gemini-api/docs/embeddings).
+ * Prefer gemini-embedding-001 first — older IDs (text-embedding-004, embedding-001) often 404 on v1beta embedContent.
  */
 function embeddingModelCandidates(): string[] {
   const raw = process.env.GEMINI_EMBEDDING_MODELS?.trim();
@@ -640,7 +641,7 @@ function embeddingModelCandidates(): string[] {
       .filter(Boolean);
     if (list.length) return list;
   }
-  return ["text-embedding-004", "embedding-001", "gemini-embedding-001"];
+  return ["gemini-embedding-001", "text-embedding-004", "embedding-001"];
 }
 
 export type EmbeddingRole = "query" | "document";

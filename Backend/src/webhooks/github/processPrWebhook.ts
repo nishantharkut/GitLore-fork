@@ -1,4 +1,5 @@
-import { getDB } from "../../lib/mongo";
+import { getDB, ObjectId } from "../../lib/mongo";
+import { getInstallationToken, isAppConfigured } from "../../lib/githubApp";
 import {
   githubRestJson,
   githubRestJsonMethod,
@@ -25,6 +26,20 @@ export type GithubPRWebhookBody = {
 
 type OpenPrBrief = { number: number; title: string };
 
+let warnedGithubAppUnset = false;
+let warnedLegacyGithubToken = false;
+
+function userIdFromRegistration(reg: { registeredBy?: unknown }): ObjectId | null {
+  const rb = reg.registeredBy;
+  if (rb == null) return null;
+  if (rb instanceof ObjectId) return rb;
+  try {
+    return new ObjectId(String(rb));
+  } catch {
+    return null;
+  }
+}
+
 export async function processPRWebhook(payload: GithubPRWebhookBody): Promise<void> {
   try {
     const repoFull = payload.repository.full_name.toLowerCase();
@@ -35,8 +50,25 @@ export async function processPRWebhook(payload: GithubPRWebhookBody): Promise<vo
 
     const db = getDB();
     const reg = await db.collection("webhook_registrations").findOne({ repo: repoFull });
-    let token = reg?.githubToken as string | undefined;
 
+    let token: string | undefined;
+    const regUserId = reg ? userIdFromRegistration(reg as { registeredBy?: unknown }) : null;
+    if (regUserId) {
+      const u = await db.collection("users").findOne({ _id: regUserId });
+      token = (u?.access_token as string | undefined) ?? undefined;
+    }
+    const regRow = reg as { githubToken?: string } | null;
+    const legacyToken =
+      typeof regRow?.githubToken === "string" && regRow.githubToken ? regRow.githubToken : undefined;
+    if (!token && legacyToken) {
+      if (!warnedLegacyGithubToken) {
+        warnedLegacyGithubToken = true;
+        console.warn(
+          "[webhook] Using legacy webhook_registrations.githubToken; re-run Enable PR Intelligence to clear stored token and use users.access_token via registeredBy."
+        );
+      }
+      token = legacyToken;
+    }
     if (!token) {
       const serviceUser =
         process.env.SUPERPLANE_SERVICE_USERNAME?.trim() || "gitlore-service";
@@ -49,9 +81,11 @@ export async function processPRWebhook(payload: GithubPRWebhookBody): Promise<vo
       return;
     }
 
+    const personalToken = token;
+
     let currentFiles: string[];
     try {
-      const files = await listPullRequestFilesRest(token, owner, repoName, prNumber);
+      const files = await listPullRequestFilesRest(personalToken, owner, repoName, prNumber);
       currentFiles = files.map((f) => f.filename);
     } catch (e) {
       if (e instanceof GithubRestError && e.status === 403) {
@@ -64,7 +98,7 @@ export async function processPRWebhook(payload: GithubPRWebhookBody): Promise<vo
     let openPRs: OpenPrBrief[] = [];
     try {
       openPRs = await githubRestJson<OpenPrBrief[]>(
-        token,
+        personalToken,
         `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/pulls?state=open&per_page=20`
       );
     } catch (e) {
@@ -79,7 +113,7 @@ export async function processPRWebhook(payload: GithubPRWebhookBody): Promise<vo
       const results = await Promise.all(
         batch.map(async (pr) => {
           try {
-            const ofs = await listPullRequestFilesRest(token, owner, repoName, pr.number);
+            const ofs = await listPullRequestFilesRest(personalToken, owner, repoName, pr.number);
             const names = ofs.map((f) => f.filename);
             const overlap = names.filter((f) => currentSet.has(f));
             if (overlap.length === 0) return null;
@@ -106,10 +140,28 @@ export async function processPRWebhook(payload: GithubPRWebhookBody): Promise<vo
 
     const md = buildPrIntelligenceCommentMarkdown(repoFull, related, kgRows);
 
+    let commentToken = personalToken;
+    if (isAppConfigured()) {
+      try {
+        commentToken = await getInstallationToken();
+      } catch (e) {
+        console.warn(
+          "[webhook] GitHub App installation token failed — using personal token for comments:",
+          e instanceof Error ? e.message : e
+        );
+        commentToken = personalToken;
+      }
+    } else if (!warnedGithubAppUnset) {
+      warnedGithubAppUnset = true;
+      console.warn(
+        "GitHub App not configured — comments will appear as personal account. Set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID for bot identity."
+      );
+    }
+
     let comments: Array<{ id: number; body: string }> = [];
     try {
       comments = await githubRestJson<Array<{ id: number; body: string }>>(
-        token,
+        commentToken,
         `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/issues/${prNumber}/comments?per_page=100`
       );
     } catch (e) {
@@ -120,7 +172,7 @@ export async function processPRWebhook(payload: GithubPRWebhookBody): Promise<vo
       if (typeof com.body === "string" && com.body.includes(GITLORE_PR_INTEL_MARKER)) {
         try {
           await githubRestDelete(
-            token,
+            commentToken,
             `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/issues/comments/${com.id}`
           );
         } catch (e) {
@@ -130,7 +182,7 @@ export async function processPRWebhook(payload: GithubPRWebhookBody): Promise<vo
     }
 
     await githubRestJsonMethod<{ id: number }>(
-      token,
+      commentToken,
       "POST",
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/issues/${prNumber}/comments`,
       { body: md }

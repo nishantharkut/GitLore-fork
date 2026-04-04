@@ -525,6 +525,21 @@ repoRouter.post("/repo/:owner/:name/setup-webhook", async (c) => {
       return c.json({ error: "BACKEND_PUBLIC_URL not configured" }, 400);
     }
 
+    const hookSecret = process.env.GITHUB_WEBHOOK_SECRET?.trim();
+    const allowUnsignedDev =
+      process.env.NODE_ENV !== "production" &&
+      process.env.GITLORE_WEBHOOK_ALLOW_UNSIGNED?.trim() === "true";
+    if (!hookSecret && !allowUnsignedDev) {
+      return c.json(
+        {
+          error:
+            "GITHUB_WEBHOOK_SECRET not configured — set a shared secret before registering a webhook (required for signature verification). For local dev only, you may set GITLORE_WEBHOOK_ALLOW_UNSIGNED=true with NODE_ENV!=production.",
+        },
+        400
+      );
+    }
+    const secretForHook = hookSecret || "";
+
     const webhookUrl = `${publicBase}/webhooks/github`;
     const repoKey = `${owner}/${name}`.toLowerCase();
     const db = getDB();
@@ -547,13 +562,12 @@ repoRouter.post("/repo/:owner/:name/setup-webhook", async (c) => {
       }
     }
 
-    const secret = process.env.GITHUB_WEBHOOK_SECRET?.trim() || "";
     const hookBody = {
       name: "web",
       config: {
         url: webhookUrl,
         content_type: "json",
-        secret,
+        secret: secretForHook,
         insecure_ssl: "0" as const,
       },
       events: ["pull_request"],
@@ -608,10 +622,13 @@ repoRouter.post("/repo/:owner/:name/setup-webhook", async (c) => {
           webhookId,
           webhookUrl,
           registeredBy: user._id,
-          githubToken: user.access_token,
           username: user.username,
-          createdAt: new Date(),
+          updated_at: new Date(),
         },
+        $setOnInsert: {
+          created_at: new Date(),
+        },
+        $unset: { githubToken: "" },
       },
       { upsert: true }
     );
