@@ -17,9 +17,15 @@ function normalizeRepo(full: string): { owner: string; name: string; repoFull: s
   if (i <= 0 || i === s.length - 1) {
     throw new Error("repo must be owner/name");
   }
-  const owner = s.slice(0, i);
-  const name = s.slice(i + 1);
+  const owner = s.slice(0, i).trim();
+  const name = s.slice(i + 1).trim();
+  if (!owner || !name) throw new Error("repo must be owner/name");
   return { owner, name, repoFull: `${owner}/${name}`.toLowerCase() };
+}
+
+/** Normalize path params the same way as body `repo` strings. */
+function paramsToRepo(ownerParam: string, nameParam: string): { owner: string; name: string; repoFull: string } {
+  return normalizeRepo(`${ownerParam}/${nameParam}`);
 }
 
 /**
@@ -30,16 +36,31 @@ enforcementRouter.get("/enforcement/logs/:owner/:name", async (c) => {
     const user = getCurrentUser(c);
     if (!user) return c.json({ error: "Not authenticated" }, 401);
 
-    const owner = c.req.param("owner");
-    const name = c.req.param("name");
-    const repoFull = `${owner}/${name}`.toLowerCase().replace(/^\/+|\/+$/g, "");
+    let owner: string;
+    let name: string;
+    let repoFull: string;
+    try {
+      ({ owner, name, repoFull } = paramsToRepo(c.req.param("owner"), c.req.param("name")));
+    } catch {
+      return c.json({ error: "Invalid owner or repository name" }, 400);
+    }
+
+    const gql = createGithubClient(user.access_token);
+    const repoMeta = await getRepositoryInfo(gql, owner, name);
+    if (!repoMeta) {
+      return c.json(
+        { error: "Repository not found or not accessible with your GitHub token" },
+        403
+      );
+    }
 
     const limit = Math.min(200, Math.max(1, Number(c.req.query("limit")) || 50));
     const action = c.req.query("action");
     const act =
       action === "allow" || action === "deny" ? action : undefined;
 
-    const logs = await getEnforcementLogs(repoFull, limit, act);
+    const currentUserId = `github:${user.username}`;
+    const logs = await getEnforcementLogs(repoFull, limit, act, currentUserId);
     return c.json({
       repo: repoFull,
       count: logs.length,

@@ -91,11 +91,29 @@ async function createIndexes(database: Db) {
     await database
       .collection("enforcement_logs")
       .createIndex({ repo: 1, timestamp: -1 })
-      .catch(() => {});
+      .catch((err) => {
+        const msg = err?.message || String(err);
+        if (!msg.includes("already exists")) {
+          console.warn(
+            "enforcement_logs repo/timestamp index:",
+            msg,
+            "(If keys changed, drop the conflicting index in Atlas/Shell and restart.)"
+          );
+        }
+      });
     await database
       .collection("enforcement_logs")
       .createIndex({ user: 1, timestamp: -1 })
-      .catch(() => {});
+      .catch((err) => {
+        const msg = err?.message || String(err);
+        if (!msg.includes("already exists")) {
+          console.warn(
+            "enforcement_logs user/timestamp index:",
+            msg,
+            "(If keys changed, drop the conflicting index in Atlas/Shell and restart.)"
+          );
+        }
+      });
 
     console.log("Database indexes created");
   } catch (error) {

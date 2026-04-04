@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Shield, FlaskConical, Loader2 } from "lucide-react";
 import { useRepo } from "@/context/RepoContext";
 import {
@@ -37,18 +37,22 @@ export function EnforcementLog({ refreshKey = 0 }: Props) {
   const [testParams, setTestParams] = useState("{}");
   const [testBusy, setTestBusy] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const loadSeqRef = useRef(0);
 
   const load = useCallback(async () => {
     if (!repoReady) return;
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setErr(null);
     try {
       const res = await fetchEnforcementLogs(target.owner, target.name, 20);
+      if (seq !== loadSeqRef.current) return;
       setLogs(res.logs || []);
     } catch (e) {
+      if (seq !== loadSeqRef.current) return;
       setErr(e instanceof Error ? e.message : "Failed to load logs");
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [repoReady, target.owner, target.name]);
 
@@ -64,9 +68,18 @@ export function EnforcementLog({ refreshKey = 0 }: Props) {
 
   const runTest = async () => {
     if (!repoReady) return;
-    let params: Record<string, unknown> = {};
+    let params: Record<string, unknown>;
     try {
-      params = JSON.parse(testParams || "{}") as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(testParams.trim() || "{}");
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed)
+      ) {
+        setTestResult("Params must be a JSON object, e.g. {} or {\"path\":\"README.md\"} — not an array or null.");
+        return;
+      }
+      params = parsed as Record<string, unknown>;
     } catch {
       setTestResult("Invalid JSON in params.");
       return;

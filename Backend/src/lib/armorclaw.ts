@@ -276,11 +276,14 @@ export async function logEnforcementDecision(
 export async function getEnforcementLogs(
   repoFull: string,
   limit: number,
-  action?: "allow" | "deny"
+  action?: "allow" | "deny",
+  /** When set, only rows created by this GitLore user id (e.g. github:login). */
+  forUser?: string
 ): Promise<EnforcementLogDoc[]> {
   const db = getDB();
   const q: Record<string, unknown> = { repo: repoFull };
   if (action) q.action = action;
+  if (forUser) q.user = forUser;
   const rows = await db
     .collection("enforcement_logs")
     .find(q)
