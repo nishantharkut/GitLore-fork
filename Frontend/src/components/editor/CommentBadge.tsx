@@ -13,18 +13,18 @@ export type CommentBadgeData = {
 function categoryStyle(text: string): string {
   const t = text.toLowerCase();
   if (/xss|injection|sql|csrf/.test(t)) {
-    return "border-red-500/80 bg-red-500/10 text-gitlore-text";
+    return "border border-gitlore-border/80 border-l-[3px] border-l-gitlore-error bg-[var(--error-dim)] text-gitlore-text";
   }
   if (/n\+1|n plus one|cache|performance|slow/.test(t)) {
-    return "border-orange-500/80 bg-orange-500/10 text-gitlore-text";
+    return "border border-gitlore-border/80 border-l-[3px] border-l-gitlore-warning bg-[var(--warning-dim)] text-gitlore-text";
   }
   if (/leak|cleanup|memory|unmount|effect/.test(t)) {
-    return "border-yellow-500/80 bg-yellow-500/10 text-gitlore-text";
+    return "border border-gitlore-border/80 border-l-[3px] border-l-gitlore-warning bg-[var(--warning-dim)] text-gitlore-text";
   }
   if (/god object|architecture|layer|coupling/.test(t)) {
-    return "border-blue-500/80 bg-blue-500/10 text-gitlore-text";
+    return "border border-gitlore-border/80 border-l-[3px] border-l-[var(--code-accent)] bg-[var(--code-accent-dim)] text-gitlore-text";
   }
-  return "border-gitlore-border bg-gitlore-surface-hover/80 text-gitlore-text";
+  return "border border-gitlore-border/80 border-l-[3px] border-l-gitlore-accent/40 bg-gitlore-surface-hover text-gitlore-text";
 }
 
 function truncate(s: string, n: number): string {
@@ -66,7 +66,7 @@ export function CommentBadge({ comment, onClick }: Props) {
       ref={badgeRef}
       type="button"
       onClick={() => onClick(comment)}
-      className={`comment-badge group my-1 flex max-w-full items-center gap-2 rounded-full border-l-4 py-1.5 pl-2 pr-3 text-left text-[11px] shadow-sm transition-colors md:text-xs ${cat}`}
+      className={`comment-badge group my-1 flex max-w-full items-center gap-2 rounded-sm py-1.5 pl-2 pr-3 text-left text-[11px] shadow-sm transition-colors md:text-xs ${cat}`}
     >
       <img
         src={`https://github.com/${comment.author}.png?size=32`}
@@ -92,7 +92,7 @@ export function glowLineForComment(line: number): void {
   animeAnimate(el as HTMLElement, {
     backgroundColor: [
       "transparent",
-      "rgba(59,130,246,0.15)",
+      "rgba(201,168,76,0.12)",
       "transparent",
     ],
     duration: 800,

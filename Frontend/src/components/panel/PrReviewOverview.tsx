@@ -64,48 +64,55 @@ export function PrReviewOverview({ meta, changedFiles, comments, loading, error,
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-gitlore-border bg-gitlore-surface/80 px-4 py-3">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <span className="font-code text-sm font-semibold text-gitlore-accent">#{meta.number}</span>
-          <span className="min-w-0 flex-1 font-body text-sm font-medium leading-snug text-gitlore-text">{meta.title}</span>
+      <div className="shrink-0 border-b border-gitlore-border p-3 md:px-4 md:pt-4">
+        <div className="rounded-sm border border-gitlore-border bg-[var(--elevated)] px-3.5 py-3">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="font-code text-sm font-semibold text-gitlore-accent">#{meta.number}</span>
+            <span className="min-w-0 flex-1 font-body text-sm font-medium leading-snug text-gitlore-text">{meta.title}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-code text-[11px] text-gitlore-text-secondary md:text-xs">
+            <span className="capitalize">{meta.state}</span>
+            {meta.authorLogin && <span>@{meta.authorLogin}</span>}
+            <span>
+              {changedFiles.length} file{changedFiles.length === 1 ? "" : "s"} · {comments.length} comment
+              {comments.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <a
+            href={meta.htmlUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-block font-code text-xs text-gitlore-accent hover:underline"
+          >
+            Open on GitHub
+          </a>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-code text-[11px] text-gitlore-text-secondary md:text-xs">
-          <span className="capitalize">{meta.state}</span>
-          {meta.authorLogin && <span>@{meta.authorLogin}</span>}
-          <span>
-            {changedFiles.length} file{changedFiles.length === 1 ? "" : "s"} · {comments.length} comment
-            {comments.length === 1 ? "" : "s"}
-          </span>
-        </div>
-        <a
-          href={meta.htmlUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 inline-block font-code text-xs text-gitlore-accent hover:underline"
-        >
-          Open on GitHub
-        </a>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 md:px-3">
-        <div className="mb-2 px-2 font-code text-[10px] font-medium uppercase tracking-wider text-gitlore-text-secondary">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 md:px-4">
+        <div className="mb-3 font-code text-[10px] font-bold uppercase tracking-wider text-gitlore-text-secondary">
           Review comments
         </div>
         {comments.length === 0 ? (
-          <p className="px-2 text-sm text-gitlore-text-secondary">No inline review comments on this pull request.</p>
+          <div className="rounded-sm border border-gitlore-border bg-[var(--elevated)] px-3.5 py-3">
+            <p className="text-sm text-gitlore-text-secondary">No inline review comments on this pull request.</p>
+          </div>
         ) : (
-          <ul className="space-y-4">
+          <ul className="space-y-3">
             {[...grouped.entries()].map(([path, rows]) => (
-              <li key={path}>
-                <div className="mb-1.5 truncate px-2 font-code text-[11px] text-gitlore-accent/90" title={path}>
+              <li
+                key={path}
+                className="rounded-sm border border-gitlore-border bg-[var(--elevated)] p-3"
+              >
+                <div className="mb-2 truncate border-b border-gitlore-border pb-2 font-code text-[11px] text-gitlore-accent" title={path}>
                   {path}
                 </div>
-                <ul className="space-y-1">
+                <ul className="space-y-1.5">
                   {rows.map((c) => (
                     <li key={c.id}>
                       <button
                         type="button"
                         onClick={() => onCommentClick(c)}
-                        className="w-full rounded-sm border border-gitlore-border/60 bg-gitlore-code/40 px-2.5 py-2 text-left transition-colors hover:border-gitlore-accent/40 hover:bg-gitlore-surface-hover"
+                        className="w-full rounded-sm border border-gitlore-border bg-gitlore-surface px-2.5 py-2 text-left transition-colors hover:border-[var(--border-accent)] hover:bg-gitlore-surface-hover"
                       >
                         <div className="flex items-center justify-between gap-2 font-code text-[10px] text-gitlore-text-secondary">
                           <span>@{c.author}</span>

@@ -16,7 +16,7 @@ function glowCmLine(line: number): void {
   animeAnimate(el, {
     backgroundColor: [
       "transparent",
-      "rgba(59,130,246,0.15)",
+      "rgba(201,168,76,0.14)",
       "transparent",
     ],
     duration: 800,

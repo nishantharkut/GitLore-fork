@@ -6,7 +6,7 @@ type Props = {
   fixedCode: string;
 };
 
-/** Split diff: red left (#2D0000), green right (#002D00) with line stagger animation. */
+/** Split diff: theme semantic removed/added surfaces (matches --error-dim / --success-dim). */
 export function SplitDiffView({ buggyCode, fixedCode }: Props) {
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
@@ -34,36 +34,42 @@ export function SplitDiffView({ buggyCode, fixedCode }: Props) {
   const rightLines = fixedCode.split("\n");
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <div ref={leftRef} className="min-w-0">
-        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-red-400/90">
-          Buggy code
+    <div className="rounded-sm border border-gitlore-border bg-[var(--elevated)] p-3.5">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-3">
+        <div ref={leftRef} className="min-w-0">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <span style={{ fontSize: 8, color: "var(--error)" }} aria-hidden>
+              ▶
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gitlore-text-secondary">
+              Buggy code
+            </span>
+          </div>
+          <pre className="diff-line-container overflow-x-auto whitespace-pre rounded-sm border border-gitlore-border bg-[var(--error-dim)] p-3 font-code text-[11px] leading-5 text-gitlore-text md:text-xs">
+            {leftLines.map((line, i) => (
+              <div key={`l-${i}`} className="diff-line">
+                {line}
+              </div>
+            ))}
+          </pre>
         </div>
-        <pre
-          className="overflow-x-auto whitespace-pre rounded-sm border border-red-900/40 p-3 font-code text-xs leading-5 text-gitlore-text"
-          style={{ backgroundColor: "#2D0000" }}
-        >
-          {leftLines.map((line, i) => (
-            <div key={`l-${i}`} className="diff-line">
-              {line}
-            </div>
-          ))}
-        </pre>
-      </div>
-      <div ref={rightRef} className="min-w-0">
-        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-emerald-400/90">
-          Suggested fix
+        <div ref={rightRef} className="min-w-0">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <span style={{ fontSize: 8, color: "var(--success)" }} aria-hidden>
+              ▶
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gitlore-text-secondary">
+              Suggested fix
+            </span>
+          </div>
+          <pre className="diff-line-container overflow-x-auto whitespace-pre rounded-sm border border-gitlore-border bg-[var(--success-dim)] p-3 font-code text-[11px] leading-5 text-gitlore-text md:text-xs">
+            {rightLines.map((line, i) => (
+              <div key={`r-${i}`} className="diff-line">
+                {line}
+              </div>
+            ))}
+          </pre>
         </div>
-        <pre
-          className="overflow-x-auto whitespace-pre rounded-sm border border-emerald-900/40 p-3 font-code text-xs leading-5 text-gitlore-text"
-          style={{ backgroundColor: "#002D00" }}
-        >
-          {rightLines.map((line, i) => (
-            <div key={`r-${i}`} className="diff-line">
-              {line}
-            </div>
-          ))}
-        </pre>
       </div>
     </div>
   );

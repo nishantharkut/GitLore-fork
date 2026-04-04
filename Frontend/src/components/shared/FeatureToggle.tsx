@@ -9,9 +9,6 @@ type Props = {
   onToggle: (feature: ActiveFeature) => void;
 };
 
-const ORANGE = "#F97316";
-const BLUE = "#3B82F6";
-
 export function FeatureToggle({ activeFeature, onToggle }: Props) {
   const isReview = activeFeature === "review";
   const indicatorRef = useRef<HTMLSpanElement>(null);
@@ -23,7 +20,7 @@ export function FeatureToggle({ activeFeature, onToggle }: Props) {
     const parent = wrapRef.current;
     if (!el || !parent) return;
     const w = parent.offsetWidth;
-    const slide = Math.max(0, w / 2 - 2);
+    const slide = w / 2;
     if (skipFirst.current) {
       el.style.transform = `translateX(${isReview ? slide : 0}px)`;
       skipFirst.current = false;
@@ -39,36 +36,37 @@ export function FeatureToggle({ activeFeature, onToggle }: Props) {
   return (
     <div
       ref={wrapRef}
-      className="feature-toggle relative inline-flex rounded-full border border-gitlore-border bg-gitlore-code/60 p-0.5 shadow-sm"
+      className="feature-toggle relative inline-flex overflow-hidden rounded-sm border border-gitlore-border/80 bg-gitlore-code/50"
       role="group"
       aria-label="Feature mode"
     >
+      {/* Flush rectangle: only the track’s overflow-hidden + rounded-sm rounds the outer corners; inner seam stays square */}
       <span
         ref={indicatorRef}
-        className="feature-toggle-indicator pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full shadow-sm"
+        className="feature-toggle-indicator pointer-events-none absolute left-0 top-0.5 bottom-0.5 w-1/2 rounded-none"
         style={{
-          backgroundColor: isReview ? BLUE : ORANGE,
+          backgroundColor: isReview ? "var(--code-accent)" : "var(--accent)",
         }}
         aria-hidden
       />
       <button
         type="button"
         onClick={() => onToggle("archaeology")}
-        className={`relative z-10 flex min-w-[7.5rem] items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors md:min-w-[8.5rem] md:text-[13px] ${
+        className={`relative z-10 flex min-w-[7.5rem] flex-1 items-center justify-center gap-1 px-2.5 py-1 text-[11px] font-semibold transition-colors md:min-w-[8.5rem] md:px-3 md:text-xs ${
           !isReview ? "text-white" : "text-gitlore-text-secondary hover:text-gitlore-text"
         }`}
       >
-        <GitBranch className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" aria-hidden />
+        <GitBranch className="h-3 w-3 shrink-0 md:h-3.5 md:w-3.5" aria-hidden />
         Live Repo
       </button>
       <button
         type="button"
         onClick={() => onToggle("review")}
-        className={`relative z-10 flex min-w-[7.5rem] items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors md:min-w-[8.5rem] md:text-[13px] ${
+        className={`relative z-10 flex min-w-[7.5rem] flex-1 items-center justify-center gap-1 px-2.5 py-1 text-[11px] font-semibold transition-colors md:min-w-[8.5rem] md:px-3 md:text-xs ${
           isReview ? "text-white" : "text-gitlore-text-secondary hover:text-gitlore-text"
         }`}
       >
-        <MessageSquare className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" aria-hidden />
+        <MessageSquare className="h-3 w-3 shrink-0 md:h-3.5 md:w-3.5" aria-hidden />
         Review Comments
       </button>
     </div>

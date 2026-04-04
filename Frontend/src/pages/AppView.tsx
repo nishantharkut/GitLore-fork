@@ -281,9 +281,9 @@ const DiffViewer = ({
               <div
                 className={`diff-line flex w-full min-w-0 cursor-pointer items-start ${
                   line.type === "added"
-                    ? "bg-[rgba(46,204,113,0.08)]"
+                    ? "bg-[var(--code-added)]"
                     : line.type === "removed"
-                      ? "bg-[rgba(231,76,60,0.08)]"
+                      ? "bg-[var(--code-removed)]"
                       : ""
                 } md:w-max md:min-w-full`}
                 onClick={(e) => {
@@ -309,7 +309,7 @@ const DiffViewer = ({
                   className={`comment-badge my-1 ml-10 mr-2 flex w-[calc(100%-3rem)] cursor-pointer flex-wrap items-center gap-2 rounded-sm border px-3 py-1 text-left text-[11px] transition-colors md:ml-12 md:mr-0 md:inline-flex md:w-auto md:text-xs ${
                     activeCommentId === comment.id
                       ? "border-gitlore-accent/40 bg-gitlore-accent/15 text-gitlore-accent"
-                      : "border-gitlore-error/20 bg-gitlore-error/10 text-gitlore-error hover:bg-gitlore-error/15"
+                      : "border-gitlore-border/80 bg-[var(--elevated)] text-gitlore-text hover:border-gitlore-accent/30 hover:bg-gitlore-surface-hover"
                   }`}
                 >
                   <span className="font-semibold line-clamp-2">{comment.text}</span>
