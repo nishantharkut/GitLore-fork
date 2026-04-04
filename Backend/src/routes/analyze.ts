@@ -191,25 +191,30 @@ analyzeRouter.post("/analyze", async (c) => {
 
     narrative.timeline = timeline;
 
-    const embedding = await getEmbedding(narrative.one_liner, "document");
-
-    await db.collection("commit_cache").updateOne(
-      { _id: cacheKey } as any,
-      {
-        $set: {
-          repo: repoNorm,
-          file_path: request.file_path,
-          line_number: request.line_number,
-          sha: commit.oid,
-          message: commit.message,
-          narrative,
-          embedding: embedding ?? null,
-          created_at: new Date(),
-          ttl: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
+    // Narrative is the valuable payload; embedding + Mongo cache are best-effort.
+    // If they fail (quota, DB timeout), still return the analysis so the UI does not show a false failure.
+    try {
+      const embedding = await getEmbedding(narrative.one_liner, "document");
+      await db.collection("commit_cache").updateOne(
+        { _id: cacheKey } as any,
+        {
+          $set: {
+            repo: repoNorm,
+            file_path: request.file_path,
+            line_number: request.line_number,
+            sha: commit.oid,
+            message: commit.message,
+            narrative,
+            embedding: embedding ?? null,
+            created_at: new Date(),
+            ttl: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
+          },
         },
-      },
-      { upsert: true }
-    );
+        { upsert: true }
+      );
+    } catch (cacheErr) {
+      console.error("Analyze: narrative ready but embedding/cache failed:", cacheErr);
+    }
 
     return c.json(narrative);
   } catch (error) {
@@ -225,15 +230,21 @@ analyzeRouter.post("/analyze", async (c) => {
       );
     }
 
+    const raw = error instanceof Error ? error.message : String(error);
+    const message =
+      process.env.NODE_ENV === "development"
+        ? raw.slice(0, 400)
+        : /gemini|narrative|embedding|Generative|API key|quota|429/i.test(raw)
+          ? "AI step failed (Gemini quota, key, or model). Check backend logs and GEMINI_API_KEY."
+          : /mongo|Mongo|database|connect|commit_cache/i.test(raw)
+            ? "Database error while saving analysis. Check MongoDB and logs."
+            : /github|GitHub|rate limit|403|401|Not Found/i.test(raw)
+              ? "GitHub API error (rate limit, scope, or repo access). Check logs."
+              : "Unexpected error — try again. See server logs for details.";
     return c.json(
       {
         error: "Failed to generate analysis",
-        message:
-          process.env.NODE_ENV === "development"
-            ? error instanceof Error
-              ? error.message
-              : "Unknown error"
-            : undefined,
+        message,
       },
       500
     );

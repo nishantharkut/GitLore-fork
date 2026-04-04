@@ -209,7 +209,9 @@ export async function postJSON<T>(path: string, body: unknown): Promise<T> {
     /* ignore */
   }
   if (!res.ok) {
-    const msg = (data.error as string) || (data.message as string) || res.statusText;
+    // Prefer `message` when both exist (e.g. analyze 500: error title + actionable message).
+    const msg =
+      (data.message as string) || (data.error as string) || res.statusText;
     throw new Error(msg);
   }
   return data as T;
@@ -339,9 +341,23 @@ export type RepoOverviewResponse = {
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await apiFetch(path);
-  const data = (await res.json()) as Record<string, unknown>;
+  const text = await res.text();
+  let data: Record<string, unknown> = {};
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new Error(
+        !res.ok
+          ? res.statusText || "Bad response from server"
+          : "Server returned invalid JSON"
+      );
+    }
+  }
   if (!res.ok) {
-    throw new Error((data.error as string) || (data.message as string) || res.statusText);
+    throw new Error(
+      (data.message as string) || (data.error as string) || res.statusText
+    );
   }
   return data as T;
 }

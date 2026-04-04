@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getDB } from "../lib/mongo";
 import { getCurrentUser } from "../middleware/auth";
-import { ingestRepo } from "../lib/ingest";
+import { ingestRepo, isStaleIngestRunning } from "../lib/ingest";
 import { buildKnowledgeLayout } from "../lib/knowledgeLayout";
 
 export const ingestRouter = new Hono();
@@ -29,7 +29,7 @@ ingestRouter.post("/repo/:owner/:name/ingest", async (c) => {
     const db = getDB();
 
     const existing = await db.collection("knowledge_progress").findOne({ repo: repoFull });
-    if (existing?.status === "running") {
+    if (existing?.status === "running" && !isStaleIngestRunning(existing)) {
       return c.json({
         status: "already_running",
         processed: existing.processed,
@@ -69,6 +69,19 @@ ingestRouter.get("/repo/:owner/:name/ingest/status", async (c) => {
     }
 
     const nodeCount = await db.collection("knowledge_nodes").countDocuments({ repo: repoFull });
+
+    if (isStaleIngestRunning(progress)) {
+      return c.json({
+        status: "stale",
+        processed: progress.processed ?? 0,
+        failed: progress.failed ?? 0,
+        total: progress.total ?? 0,
+        errorCount: Array.isArray(progress.errors) ? progress.errors.length : 0,
+        nodeCount,
+        hint:
+          "Ingest was marked running but has not updated recently (e.g. server restarted). Start again to continue.",
+      });
+    }
 
     return c.json({
       status: progress.status,

@@ -62,6 +62,81 @@ repoRouter.get("/user/github-profile", async (c) => {
 });
 
 /**
+ * GET /api/user/github-rate-limit — REST + GraphQL remaining quota for the signed-in OAuth token.
+ * Use this to confirm GitHub throttling (vs Gemini, Mongo, or invalid GraphQL).
+ *
+ * Security: Covered by `app.use("/api/*", authMiddleware)` — no session ⇒ 401 before this runs.
+ * The GitHub access token is only used server-side in the upstream request; never returned in JSON.
+ */
+repoRouter.get("/user/github-rate-limit", async (c) => {
+  try {
+    const user = getCurrentUser(c);
+    if (!user) {
+      return c.json({ error: "Not authenticated" }, 401);
+    }
+    const res = await fetch("https://api.github.com/rate_limit", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${user.access_token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    const text = await res.text();
+    let body: Record<string, unknown> = {};
+    try {
+      body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      return c.json(
+        {
+          error: "Invalid JSON from GitHub rate_limit",
+          status: res.status,
+          ...(process.env.NODE_ENV === "development" ? { raw: text.slice(0, 200) } : {}),
+        },
+        502
+      );
+    }
+    if (!res.ok) {
+      return c.json(
+        {
+          error: "GitHub rate_limit request failed",
+          status: res.status,
+          ...(process.env.NODE_ENV === "development" ? { body } : {}),
+        },
+        502
+      );
+    }
+    const resources = body.resources as Record<string, { limit: number; remaining: number; reset: number; used?: number }> | undefined;
+    const summary = resources
+      ? Object.fromEntries(
+          Object.entries(resources).map(([k, v]) => [
+            k,
+            {
+              limit: v.limit,
+              remaining: v.remaining,
+              reset: v.reset,
+              resetISO: new Date(v.reset * 1000).toISOString(),
+            },
+          ])
+        )
+      : {};
+    return c.json({
+      ok: true,
+      resources: summary,
+      hint: "If graphql or core remaining is 0, wait until resetISO. New GitHub OAuth apps do not raise this limit.",
+    });
+  } catch (error) {
+    console.error("github-rate-limit error:", error);
+    return c.json(
+      {
+        error: "Failed to load GitHub rate limits",
+        message: process.env.NODE_ENV === "development" && error instanceof Error ? error.message : undefined,
+      },
+      500
+    );
+  }
+});
+
+/**
  * GET /api/repos/me?limit=30 — repos for the signed-in user (updated desc).
  */
 repoRouter.get("/repos/me", async (c) => {

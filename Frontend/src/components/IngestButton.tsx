@@ -10,11 +10,13 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
   const [failed, setFailed] = useState(0);
   const [total, setTotal] = useState(0);
   const [nodeCount, setNodeCount] = useState(0);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Check if already ingested on mount
   useEffect(() => {
     if (!repoReady) return;
+    setStaleNotice(null);
     const checkStatus = async () => {
       try {
         const res = await getJSON(`/api/repo/${target.owner}/${target.name}/ingest/status`);
@@ -23,6 +25,15 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
           setNodeCount(res.nodeCount || 0);
           setProcessed(res.processed || 0);
           setTotal(res.total || 0);
+        } else if (res.status === "stale") {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setStatus("idle");
+          setProcessed(res.processed || 0);
+          setTotal(res.total || 0);
+          setNodeCount(res.nodeCount || 0);
+          setStaleNotice(
+            typeof res.hint === "string" ? res.hint : "Previous ingest stopped responding. Click below to run again."
+          );
         } else if (res.status === "running") {
           setStatus("running");
           setProcessed(res.processed || 0);
@@ -48,7 +59,13 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
         setFailed(res.failed || 0);
         setTotal(res.total || 0);
         setNodeCount(res.nodeCount || 0);
-        if (res.status === "done" || res.status === "error") {
+        if (res.status === "stale") {
+          setStatus("idle");
+          if (pollRef.current) clearInterval(pollRef.current);
+          setStaleNotice(
+            typeof res.hint === "string" ? res.hint : "Previous ingest stopped responding. Click below to run again."
+          );
+        } else if (res.status === "done" || res.status === "error") {
           setStatus(res.status);
           if (pollRef.current) clearInterval(pollRef.current);
           if (res.status === "done") onComplete?.();
@@ -61,6 +78,7 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
 
   const handleIngest = async () => {
     if (!repoReady || status === "running") return;
+    setStaleNotice(null);
     setStatus("running");
     setProcessed(0);
     setFailed(0);
@@ -153,14 +171,21 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleIngest}
-      disabled={!repoReady}
-      className="flex w-full items-center justify-center gap-2 rounded-sm border border-gitlore-accent bg-gitlore-accent/10 px-4 py-3 text-sm font-medium text-gitlore-accent transition-colors hover:bg-gitlore-accent/20 disabled:opacity-50"
-    >
-      <Brain className="h-4 w-4" />
-      Build Knowledge Graph
-    </button>
+    <div className="space-y-2">
+      {staleNotice ? (
+        <p className="rounded-sm border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-gitlore-text-secondary">
+          {staleNotice}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        onClick={handleIngest}
+        disabled={!repoReady}
+        className="flex w-full items-center justify-center gap-2 rounded-sm border border-gitlore-accent bg-gitlore-accent/10 px-4 py-3 text-sm font-medium text-gitlore-accent transition-colors hover:bg-gitlore-accent/20 disabled:opacity-50"
+      >
+        <Brain className="h-4 w-4" />
+        Build Knowledge Graph
+      </button>
+    </div>
   );
 }

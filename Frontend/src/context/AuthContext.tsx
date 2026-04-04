@@ -17,9 +17,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const me = await getMe();
+      // null = signed out (401 from /auth/me). Only that path clears an existing user.
       setUser(me);
     } catch {
-      setUser(null);
+      // Network blips, 5xx on /auth/me, or parse errors must not wipe a valid session —
+      // otherwise /app briefly shows "Connect GitHub" while the cookie is still good.
+      setUser((prev) => prev);
     } finally {
       setLoading(false);
     }

@@ -38,6 +38,31 @@ export const knowledgeNodeSchema = z.object({
 
 export type KnowledgeNode = z.infer<typeof knowledgeNodeSchema>;
 
+/** If `running` but Mongo `updated_at` is older than this, treat as zombie (server restart / crash). */
+export const INGEST_STALE_RUNNING_MS = 20 * 60 * 1000;
+
+/** PRs processed in parallel during ingest (each PR = generateContent + embed). Default 1 avoids free-tier RPM spikes. */
+function ingestGeminiConcurrency(): number {
+  const n = Number(process.env.GEMINI_INGEST_CONCURRENCY);
+  if (Number.isFinite(n) && n >= 1) return Math.min(Math.floor(n), 5);
+  return 1;
+}
+
+/** Pause between ingest batches (ms). Default spaces out Gemini calls for low quotas. */
+function ingestGeminiDelayMs(): number {
+  const n = Number(process.env.GEMINI_INGEST_DELAY_MS);
+  if (Number.isFinite(n) && n >= 0) return Math.min(Math.floor(n), 120_000);
+  return 3500;
+}
+
+export function isStaleIngestRunning(doc: Record<string, unknown> | null | undefined): boolean {
+  if (!doc || doc.status !== "running") return false;
+  const u = doc.updated_at;
+  const t = u instanceof Date ? u.getTime() : u ? new Date(String(u)).getTime() : 0;
+  if (!t) return false;
+  return Date.now() - t > INGEST_STALE_RUNNING_MS;
+}
+
 function trunc(s: string, max: number): string {
   if (!s || s.length <= max) return s;
   return `${s.slice(0, max - 1)}…`;
@@ -312,6 +337,23 @@ export async function ingestRepo(
     startedAt: new Date(),
   };
 
+  await db.collection("knowledge_progress").updateOne(
+    { repo: repoFull },
+    {
+      $set: {
+        repo: repoFull,
+        status: progress.status,
+        processed: progress.processed,
+        failed: progress.failed,
+        total: progress.total,
+        errors: progress.errors,
+        started_at: progress.startedAt,
+        updated_at: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+
   try {
     const prs = await fetchMergedPRs(token, owner, repo, limit);
     progress.total = prs.length;
@@ -334,19 +376,25 @@ export async function ingestRepo(
       { upsert: true }
     );
 
-    const BATCH_SIZE = 8;
+    const BATCH_SIZE = ingestGeminiConcurrency();
+    const betweenBatchMs = ingestGeminiDelayMs();
     for (let i = 0; i < prs.length; i += BATCH_SIZE) {
       const batch = prs.slice(i, i + BATCH_SIZE);
 
       const results = await Promise.allSettled(
         batch.map(async (pr) => {
-          const knowledge = await withGemini429Retry(() => extractKnowledge(pr), {
-            maxRetries: 1,
-          });
+          const knowledge = await withGemini429Retry(() => extractKnowledge(pr));
           const topics = (knowledge.topics || []).join(", ");
           const embeddingText =
             `${knowledge.title}. ${knowledge.summary}. ${knowledge.decision}. Topics: ${topics}`.trim();
-          const embedding = await getEmbedding(embeddingText, "document");
+          let embedding: number[] | null = null;
+          try {
+            embedding = await withGemini429Retry(() => getEmbedding(embeddingText, "document"), {
+              maxRetries: 2,
+            });
+          } catch {
+            embedding = null;
+          }
           const full_narrative = [
             knowledge.title,
             knowledge.summary,
@@ -428,8 +476,8 @@ export async function ingestRepo(
       );
       onProgress?.(progress);
 
-      if (i + BATCH_SIZE < prs.length) {
-        await new Promise((res) => setTimeout(res, 1200));
+      if (i + BATCH_SIZE < prs.length && betweenBatchMs > 0) {
+        await new Promise((res) => setTimeout(res, betweenBatchMs));
       }
     }
 

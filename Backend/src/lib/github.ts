@@ -235,7 +235,7 @@ export async function getRepositoryInfo(
         }
         owner {
           login
-          type
+          __typename
         }
       }
     }
@@ -243,7 +243,17 @@ export async function getRepositoryInfo(
 
   try {
     const result: any = await client(query, { owner, name: repo });
-    return result.repository || null;
+    const repository = result.repository;
+    if (!repository) return null;
+    // GraphQL uses __typename (User | Organization); REST used owner.type — normalize for callers.
+    if (repository.owner) {
+      const tn = repository.owner.__typename as string | undefined;
+      repository.owner = {
+        login: repository.owner.login,
+        type: tn === "Organization" ? "Organization" : "User",
+      };
+    }
+    return repository;
   } catch (error) {
     console.error("Error fetching repository info:", error);
     return null;

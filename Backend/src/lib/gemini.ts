@@ -8,6 +8,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
  * Text generation (PR knowledge extraction, narratives, review explanations).
  * Chat uses GEMINI_CHAT_MODEL if set, otherwise this default.
  * Default: gemini-2.5-flash-lite (cost-efficient; free tier with its own quotas).
+ * Quotas are per Google Cloud / AI Studio project — a new API key in the same project does not reset limits.
  * gemini-2.0-flash is deprecated — override with GEMINI_GENERATION_MODEL if needed.
  */
 export const GEMINI_GENERATION_MODEL =
@@ -171,9 +172,11 @@ ${context ? `Context: ${context}` : ""}
 RESPOND IMMEDIATELY WITH JSON (nothing else):`;
 
   try {
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-    });
+    const result = await withGemini429Retry(() =>
+      model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      })
+    );
 
     const responseText =
       result.response.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -324,9 +327,11 @@ Data:
 ${contextData}`;
 
   try {
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-    });
+    const result = await withGemini429Retry(() =>
+      model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      })
+    );
 
     const responseText =
       result.response.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -523,11 +528,12 @@ export async function getEmbedding(
           const res = await run();
           const values = res?.embedding?.values;
           if (Array.isArray(values) && values.length > 0) return values;
-        } catch {
-          /* try next shape */
+        } catch (e) {
+          if (isGeminiRateLimitError(e)) throw e;
         }
       }
     } catch (err) {
+      if (isGeminiRateLimitError(err)) throw err;
       console.warn(`getEmbedding model ${modelName} failed:`, err instanceof Error ? err.message : err);
     }
   }
