@@ -55,9 +55,25 @@ export function verifySession(signed: string): string {
 /**
  * Authentication middleware for protected routes
  */
+/**
+ * Session token from cookie (web) or Authorization Bearer / X-GitLore-Session (Chrome extension).
+ */
+export function getSessionToken(c: Context): string | undefined {
+  const fromCookie = getCookie(c, "gitlore_session");
+  if (fromCookie) return fromCookie;
+  const auth = c.req.header("Authorization");
+  if (auth?.startsWith("Bearer ")) {
+    const t = auth.slice(7).trim();
+    if (t) return t;
+  }
+  const hdr = c.req.header("X-GitLore-Session");
+  if (hdr?.trim()) return hdr.trim();
+  return undefined;
+}
+
 export async function authMiddleware(c: Context, next: Next): Promise<void | Response> {
   try {
-    const session = getCookie(c, "gitlore_session");
+    const session = getSessionToken(c);
 
     if (!session) {
       return c.json({ error: "Unauthorized" }, 401);

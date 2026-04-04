@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitLore</title>
+    <link rel="stylesheet" href="../vendor/prism-tomorrow.min.css" />
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-title">
+        <span class="logo">GitLore</span>
+        <span id="repoTitle" class="repo-title"></span>
+      </div>
+      <div class="topbar-actions">
+        <button type="button" id="btnRepoPicker" class="btn btn-sm">Switch repo</button>
+        <button type="button" id="btnOpenGraph" class="btn btn-sm">Knowledge graph</button>
+        <div id="analyzeStatus" class="analyze-status"></div>
+      </div>
+    </header>
+
+    <div class="layout chat-layout">
+      <section class="chat-section">
+        <h2 class="chat-heading">Ask about this repository</h2>
+        <div id="geminiKeyNotice" class="gemini-key-notice hidden">
+          Add a <strong>Gemini API key</strong> in the GitLore popup (<strong>Settings</strong>) so chat can run. Get a key at
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.
+        </div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <form id="chatForm" class="chat-form">
+          <textarea
+            id="chatInput"
+            class="chat-input"
+            rows="2"
+            placeholder="e.g. What does the auth module do?"
+            autocomplete="off"
+          ></textarea>
+          <button type="submit" class="btn btn-send">Send</button>
+        </form>
+      </section>
+    </div>
+
+    <div id="repoPickerModal" class="repo-picker-modal hidden" role="dialog" aria-modal="true" aria-labelledby="repoPickerTitle">
+      <div class="repo-picker-dialog">
+        <div class="repo-picker-head">
+          <h2 id="repoPickerTitle" class="repo-picker-title">Switch repository</h2>
+          <button type="button" id="btnCloseRepoPicker" class="btn btn-sm btn-close-modal" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <input
+          type="search"
+          id="repoPickerSearch"
+          class="repo-picker-search"
+          placeholder="Filter repositories…"
+          autocomplete="off"
+        />
+        <div id="repoPickerStatus" class="repo-picker-status"></div>
+        <ul id="repoPickerList" class="repo-picker-list"></ul>
+      </div>
+    </div>
+
+    <div id="graphOverlay" class="graph-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="graphOverlayTitle">
+      <div class="graph-overlay-inner">
+        <div class="graph-overlay-head">
+          <h2 id="graphOverlayTitle" class="graph-overlay-title">Knowledge graph</h2>
+          <div class="graph-overlay-actions">
+            <button type="button" id="btnAnalyze" class="btn btn-sm">Build / refresh graph</button>
+            <button type="button" id="btnCloseGraph" class="btn btn-sm btn-close">Close</button>
+          </div>
+        </div>
+        <div id="graphWrap" class="graph-wrap">
+          <svg id="graphSvg" class="graph-svg" aria-label="Knowledge graph"></svg>
+        </div>
+        <p id="graphHint" class="hint">
+          Loads the repository tree from GitHub (folders + files). Drag nodes to rearrange.
+        </p>
+      </div>
+    </div>
+
+    <script src="../vendor/prism-core.min.js"></script>
+    <script src="../vendor/prism-markup.min.js"></script>
+    <script src="../vendor/prism-clike.min.js"></script>
+    <script src="../vendor/prism-javascript.min.js"></script>
+    <script src="../vendor/prism-typescript.min.js"></script>
+    <script src="../vendor/prism-json.min.js"></script>
+    <script src="../vendor/prism-bash.min.js"></script>
+    <script src="../vendor/prism-css.min.js"></script>
+    <script src="../vendor/d3.min.js"></script>
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

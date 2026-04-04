@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitLore</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="brand">
+        <span class="logo">GitLore</span>
+        <span class="tagline">Repo graph &amp; chat</span>
+      </div>
+      <div id="userRow" class="user-row hidden">
+        <img id="avatar" class="avatar" alt="" width="28" height="28" />
+        <span id="username" class="username"></span>
+        <button type="button" id="toggleSettingsHeader" class="btn btn-ghost">Settings</button>
+        <button type="button" id="logoutBtn" class="btn btn-ghost">Logout</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <section id="loginSection" class="login-section">
+        <p class="lead">
+          Sign in with GitHub using an <strong>OAuth App</strong> you control (PKCE). Put the Client ID in Settings; add
+          the client secret there too if the token step fails (stored only in this browser).
+        </p>
+        <div id="loginError" class="banner error hidden"></div>
+        <button type="button" id="connectBtn" class="btn btn-primary">Connect with GitHub</button>
+        <p class="hint" id="setupHint">
+          Store builds can ship a pre-filled Client ID. Unpacked: open GitHub, create an OAuth app, paste the
+          callback URL below (Copy), then save.
+        </p>
+        <button type="button" id="toggleSettings" class="btn btn-link">Settings</button>
+      </section>
+
+      <div id="settingsPanel" class="settings-panel hidden">
+        <label class="field">
+          <span>GitHub OAuth Client ID</span>
+          <input type="text" id="githubOauthClientId" placeholder="Ov23li..." autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>GitHub OAuth client secret (optional)</span>
+          <input
+            type="password"
+            id="githubOauthClientSecret"
+            placeholder="Only if token step fails — stored locally, never in source"
+            autocomplete="off"
+          />
+          <span class="field-note"
+            >GitHub’s token API often requires this for OAuth Apps. Rotate the secret if it was ever exposed.</span
+          >
+        </label>
+        <label class="field">
+          <span>Callback URL for your OAuth app (must match exactly, trailing /)</span>
+          <div class="callback-row">
+            <input type="text" id="callbackHint" readonly class="readonly" autocomplete="off" />
+            <button type="button" id="copyCallbackBtn" class="btn btn-secondary btn-inline">Copy</button>
+          </div>
+        </label>
+        <div class="oauth-shortcuts">
+          <button type="button" id="openGithubOAuthApps" class="btn btn-ghost btn-tiny">My OAuth apps</button>
+          <button type="button" id="openNewGithubOAuth" class="btn btn-ghost btn-tiny">New OAuth App</button>
+        </div>
+        <label class="field">
+          <span>Gemini API key (optional — for chat)</span>
+          <input type="password" id="geminiApiKey" placeholder="AIza… from Google AI Studio" autocomplete="off" />
+        </label>
+        <button type="button" id="saveSettings" class="btn btn-secondary">Save settings</button>
+      </div>
+
+      <section id="repoSection" class="repo-section hidden">
+        <div id="geminiBanner" class="banner info hidden">
+          <strong>Chat needs a Gemini API key.</strong> Create a key at
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="inline-link"
+            >Google AI Studio</a
+          >, open
+          <button type="button" id="openSettingsForGemini" class="btn btn-link btn-inline-banner">Settings</button>, paste
+          the key, then Save.
+        </div>
+        <div class="toolbar">
+          <input type="search" id="repoSearch" class="search" placeholder="Filter repositories…" autocomplete="off" />
+        </div>
+        <div id="repoSkeleton" class="skeleton-list hidden">
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+        </div>
+        <div id="repoError" class="banner error hidden"></div>
+        <ul id="repoList" class="repo-list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "GitLore",
+  "version": "1.0.0",
+  "description": "Explore GitHub repos with a file graph and AI chat — runs standalone in your browser.",
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "GitLore"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": ["identity", "storage", "sidePanel", "tabs"],
+  "host_permissions": [
+    "https://api.github.com/*",
+    "https://github.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content/float.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["sidepanel/*", "vendor/*", "content/float.css"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}

@@ -36,7 +36,10 @@ app.use(
     origin: (origin) => {
       const allowed = allowedCorsOrigins();
       if (!origin) return allowed[0];
-      return allowed.includes(origin) ? origin : null;
+      if (allowed.includes(origin)) return origin;
+      // Chrome extension pages / service worker preflight
+      if (origin.startsWith("chrome-extension://")) return origin;
+      return null;
     },
     credentials: true,
   })
