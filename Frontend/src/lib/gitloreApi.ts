@@ -735,3 +735,42 @@ export async function postVoiceTts(text: string, opts?: { locale?: "en" | "hi" }
     displayText: data.displayText,
   };
 }
+
+export type EnforcementLogEntry = {
+  timestamp: string;
+  user: string;
+  repo: string;
+  plan_id: string;
+  tool: string;
+  params: Record<string, unknown>;
+  action: "allow" | "deny";
+  reason: string;
+  policy_rule: string;
+  risk_level: string;
+  intent_token_id: string;
+  response_time_ms: number;
+  phase?: string;
+};
+
+export async function fetchEnforcementLogs(
+  owner: string,
+  name: string,
+  limit = 20
+): Promise<{ logs: EnforcementLogEntry[]; count: number }> {
+  const q = new URLSearchParams({ limit: String(limit) });
+  return getJSON<{ logs: EnforcementLogEntry[]; count: number }>(
+    `/api/enforcement/logs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}?${q}`
+  );
+}
+
+export async function postEnforcementTest(body: {
+  tool: string;
+  params?: Record<string, unknown>;
+  repo: string;
+}): Promise<{ allowed: boolean; reason: string; policy_rule: string; risk_level: string }> {
+  return postJSON("/api/enforcement/test", body);
+}
+
+export async function fetchEnforcementPolicy(): Promise<Record<string, unknown>> {
+  return getJSON<Record<string, unknown>>("/api/enforcement/policy");
+}

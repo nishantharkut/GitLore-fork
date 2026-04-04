@@ -102,7 +102,7 @@ function repoCacheKey(owner: string, name: string): string {
   return `${owner.trim().toLowerCase()}/${name.trim().toLowerCase()}`;
 }
 
-export function ChatPanel() {
+export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = {}) {
   const { target, repoReady } = useRepo();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -186,6 +186,8 @@ export function ChatPanel() {
         synthesis?: SynthesisKind;
         model?: string;
         geminiConfigured?: boolean;
+        armorAgent?: boolean;
+        enforcementLog?: Array<{ tool: string; action: string; reason: string }>;
       };
       if (typeof res.geminiConfigured === "boolean") {
         setChatStatus((prev) => ({
@@ -193,11 +195,15 @@ export function ChatPanel() {
           model: res.model || prev?.model || "gemini-2.5-flash-lite",
         }));
       }
+      const armorNote =
+        res.armorAgent && Array.isArray(res.enforcementLog)
+          ? `\n\n---\n_ArmorClaw:_ ${res.enforcementLog.length} policy check(s) — ${res.enforcementLog.filter((e) => e.action === "deny").length} blocked. See **ArmorClaw enforcement** below._`
+          : "";
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: res.answer,
+          content: res.answer + armorNote,
           sources: res.sources,
           searchTier: res.searchTier,
           nodesUsed: res.nodesUsed,
@@ -205,6 +211,7 @@ export function ChatPanel() {
           model: res.model,
         },
       ]);
+      onChatComplete?.();
     } catch (err) {
       const msg =
         err instanceof Error && /invalid question|5.*2000/i.test(err.message)
@@ -253,9 +260,9 @@ export function ChatPanel() {
           </div>
         </div>
         <p className="mt-0.5 text-xs leading-relaxed text-gitlore-text-secondary">
-          Retrieval from indexed PR decisions, then <span className="text-gitlore-text/90">Gemini</span> on the server when{" "}
-          <span className="font-code">GEMINI_API_KEY</span> is set in <span className="font-code">GitLore/Backend/.env</span>.
-          Never put API keys in the frontend.
+          Retrieval from indexed PR decisions, then <span className="text-gitlore-text/90">Gemini</span> plans and answers on the server when{" "}
+          <span className="font-code">GEMINI_API_KEY</span> is set. Each chat run can use <span className="text-gitlore-text/90">ArmorClaw</span>{" "}
+          (intent plan + per-tool policy). Set <span className="font-code">GITLORE_ARMOR_AGENT_CHAT=0</span> on the backend to use the legacy path only.
         </p>
       </div>
 

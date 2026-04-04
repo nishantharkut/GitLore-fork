@@ -57,6 +57,11 @@ export function verifySession(signed: string): string {
  */
 export async function authMiddleware(c: Context, next: Next): Promise<void | Response> {
   try {
+    if (c.req.method === "GET" && c.req.path === "/api/enforcement/policy") {
+      await next();
+      return;
+    }
+
     const session = getCookie(c, "gitlore_session");
 
     if (!session) {

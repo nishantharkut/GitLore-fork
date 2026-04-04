@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FadeIn } from "../components/effects/FadeIn";
 import { ChatPanel } from "../components/ChatPanel";
+import { EnforcementLog } from "../components/EnforcementLog";
 import { IngestButton } from "../components/IngestButton";
 import { KnowledgeDecisionsGraph } from "../components/KnowledgeDecisionsGraph";
 import { OverviewSkeleton, Spinner } from "../components/Skeleton";
@@ -44,6 +45,7 @@ const Overview = () => {
   const [pullsLoading, setPullsLoading] = useState(false);
   const [pullsErr, setPullsErr] = useState<string | null>(null);
   const [refreshChat, setRefreshChat] = useState(0);
+  const [enforcementTick, setEnforcementTick] = useState(0);
   const [showAllPRs, setShowAllPRs] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
   const [mongoAnalytics, setMongoAnalytics] = useState<RepoAnalyticsPayload | null>(null);
@@ -444,7 +446,8 @@ const Overview = () => {
                 setRefreshChat((p) => p + 1);
               }}
             />
-            <ChatPanel />
+            <ChatPanel key={refreshChat} onChatComplete={() => setEnforcementTick((t) => t + 1)} />
+            <EnforcementLog refreshKey={refreshChat + enforcementTick} />
           </div>
         </div>
       </div>
