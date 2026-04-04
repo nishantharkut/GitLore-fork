@@ -35,6 +35,10 @@ export const router = createBrowserRouter(
           lazy: lazyPage(() => import("./pages/Overview")),
         },
         {
+          path: "repos",
+          lazy: lazyPage(() => import("./pages/RepoSelect")),
+        },
+        {
           path: "*",
           lazy: lazyPage(() => import("./pages/NotFound")),
         },

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { FadeIn } from "../components/effects/FadeIn";
-import { CenteredLoader, RepoPatternCardsSkeleton, Spinner } from "../components/Skeleton";
+import { RepoPatternCardsSkeleton, Spinner } from "../components/Skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
 import { fetchRepoOverview, type RepoOverviewResponse } from "@/lib/gitloreApi";
@@ -89,7 +90,7 @@ const REFERENCE_PATTERNS: ReferencePattern[] = [
 
 const Patterns = () => {
   const { user } = useAuth();
-  const { target, repoFull, repoReady, repoResolving } = useRepo();
+  const { target, repoFull, repoReady } = useRepo();
   const [refSearch, setRefSearch] = useState("");
   const [repoSearch, setRepoSearch] = useState("");
   const [overview, setOverview] = useState<RepoOverviewResponse | null>(null);
@@ -129,17 +130,17 @@ const Patterns = () => {
     item.text.toLowerCase().includes(repoSearch.toLowerCase())
   );
 
-  if (user && repoResolving) {
-    return <CenteredLoader message="Loading your most recently updated repository…" />;
-  }
-
   if (user && !repoReady) {
     return (
       <div className="min-h-[calc(100vh-56px)] bg-gitlore-bg px-4 py-12">
         <div className="mx-auto max-w-[1200px] text-center md:px-8 md:py-12">
           <h1 className="mb-2 font-heading text-2xl font-bold text-gitlore-text">Pattern Library</h1>
           <p className="text-sm text-gitlore-text-secondary">
-            Select a repository with the <span className="text-gitlore-text">Repositories</span> search in the header to tie language stats and cached hits to a live repo.
+            Select a repository on the{" "}
+            <Link to="/repos" className="text-gitlore-accent hover:text-gitlore-accent-hover">
+              repo picker
+            </Link>{" "}
+            or via the <span className="text-gitlore-text">Repositories</span> search in the header.
           </p>
         </div>
       </div>

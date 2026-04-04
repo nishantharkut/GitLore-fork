@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } fro
 import gsap from "gsap";
 import { animate as animeAnimate } from "animejs";
 import { Group, Panel, Separator, useDefaultLayout, useGroupRef } from "react-resizable-panels";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
@@ -743,7 +743,7 @@ const AppView = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
-  const { target, repoFull, setTarget, repoReady, repoResolving } = useRepo();
+  const { target, repoFull, setTarget, repoReady } = useRepo();
   const isMobile = useIsMobile();
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [treeLoading, setTreeLoading] = useState(false);
@@ -1379,24 +1379,19 @@ const AppView = () => {
     ) : null;
 
   const repoGate =
-    user && repoResolving ? (
-      <div
-        className="flex shrink-0 items-center justify-center gap-2 border-b border-gitlore-border bg-gitlore-surface px-3 py-6 text-sm text-gitlore-text-secondary"
-        role="status"
-        aria-live="polite"
-      >
-        <Spinner className="h-4 w-4" label="Loading repository" />
-        Loading your most recently updated repository…
-      </div>
-    ) : user && !repoReady ? (
+    user && !repoReady ? (
       <div className="flex shrink-0 flex-col items-center justify-center gap-2 border-b border-gitlore-border bg-gitlore-surface px-3 py-8 text-center text-sm text-gitlore-text-secondary">
         <p className="max-w-md">
-          No repository selected. Open the header search, choose <span className="text-gitlore-text">Repositories</span>, and pick a repo to load the file tree and editor.
+          No repository selected. Go to{" "}
+          <Link to="/repos" className="text-gitlore-accent hover:text-gitlore-accent-hover">
+            repository selection
+          </Link>{" "}
+          or use the header search <span className="text-gitlore-text">Repositories</span> tab.
         </p>
       </div>
     ) : null;
 
-  const showRepoBar = !user || !repoResolving;
+  const showRepoBar = true;
   const showIde = !user || repoReady;
 
   return (

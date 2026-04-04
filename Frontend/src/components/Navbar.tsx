@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import gsap from "gsap";
-import { Menu, X } from "lucide-react";
+import { ChevronDown, ExternalLink, Menu, Moon, Sun, User, X } from "lucide-react";
 import { GuardrailsModal } from "./GuardrailsModal";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
+import { useTheme } from "@/context/ThemeContext";
 import {
   searchDecisions,
   searchGithubRepositories,
@@ -28,7 +29,7 @@ function parseDecisionSource(source: string | undefined): { filePath: string; li
   return { filePath: m[2], line };
 }
 
-const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
+export const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { repoFull, repoReady, selectRepository, setTarget } = useRepo();
@@ -240,11 +241,105 @@ const SearchBar = ({ onAfterPick }: { onAfterPick?: () => void }) => {
 };
 
 /* ── Navbar ── */
-const APP_PATHS = ["/app", "/overview", "/patterns"];
+const APP_PATHS = ["/app", "/overview", "/patterns", "/repos"];
+
+function UserMenuButton({
+  user,
+  ghProfile,
+  signOut,
+}: {
+  user: { username: string; avatar_url: string };
+  ghProfile: GithubUserProfile | null;
+  signOut: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [avatarBroken, setAvatarBroken] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const avatarSrc = user.avatar_url || ghProfile?.avatar_url || "";
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  useEffect(() => {
+    setAvatarBroken(false);
+  }, [avatarSrc]);
+
+  const profileHref = ghProfile?.login ? `https://github.com/${ghProfile.login}` : `https://github.com/${user.username}`;
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-9 items-center gap-1 rounded-sm border border-gitlore-border bg-gitlore-surface p-0.5 pl-0.5 pr-1 text-gitlore-text transition-colors hover:border-gitlore-accent/40 hover:bg-gitlore-surface-hover"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label="Account menu"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-gitlore-code">
+          {!avatarBroken && avatarSrc ? (
+            <img
+              src={avatarSrc}
+              alt=""
+              className="h-full w-full object-cover"
+              referrerPolicy="no-referrer"
+              onError={() => setAvatarBroken(true)}
+            />
+          ) : (
+            <User className="h-4 w-4 text-gitlore-text-secondary" aria-hidden />
+          )}
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-gitlore-text-secondary transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+      {open ? (
+        <div
+          className="absolute right-0 top-full z-[70] mt-1 w-56 rounded-sm border border-gitlore-border bg-gitlore-surface py-1 shadow-lg"
+          role="menu"
+        >
+          <div className="border-b border-gitlore-border px-3 py-2">
+            <p className="truncate font-code text-xs text-gitlore-text-secondary">@{user.username}</p>
+            {ghProfile?.name ? (
+              <p className="truncate text-sm font-medium text-gitlore-text">{ghProfile.name}</p>
+            ) : null}
+          </div>
+          <a
+            href={profileHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block px-3 py-2 text-sm text-gitlore-text-secondary transition-colors hover:bg-gitlore-surface-hover hover:text-gitlore-text"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            GitHub profile
+          </a>
+          <button
+            type="button"
+            role="menuitem"
+            className="w-full px-3 py-2 text-left text-sm text-gitlore-error transition-colors hover:bg-gitlore-surface-hover"
+            onClick={() => {
+              setOpen(false);
+              void signOut();
+            }}
+          >
+            Log out
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 const Navbar = () => {
   const location = useLocation();
   const { user, signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [ghProfile, setGhProfile] = useState<GithubUserProfile | null>(null);
 
   useEffect(() => {
@@ -264,10 +359,16 @@ const Navbar = () => {
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    setMobileAvatarBroken(false);
+  }, [user?.username, user?.avatar_url]);
+
   const { repoFull, repoReady } = useRepo();
   const isApp = APP_PATHS.includes(location.pathname);
   const [guardrailsOpen, setGuardrailsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileAvatarBroken, setMobileAvatarBroken] = useState(false);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -286,7 +387,10 @@ const Navbar = () => {
     <>
       <nav className="sticky top-0 z-50 flex h-14 items-center justify-between gap-2 overflow-visible border-b border-gitlore-border bg-gitlore-bg px-3 md:gap-3 md:px-6">
         <div className="flex min-w-0 items-center gap-3 md:gap-6">
-          <Link to="/" className="shrink-0 font-heading text-lg font-bold tracking-tight text-gitlore-accent">
+          <Link
+            to={user ? "/overview" : "/"}
+            className="shrink-0 font-heading text-lg font-bold tracking-tight text-gitlore-accent"
+          >
             GitLore
           </Link>
           {isApp && (
@@ -315,6 +419,16 @@ const Navbar = () => {
               >
                 Live repo
               </Link>
+              {user ? (
+                <Link
+                  to="/repos"
+                  className={`rounded-sm px-2.5 py-1.5 text-sm transition-colors md:max-lg:px-2 md:max-lg:text-[13px] ${
+                    location.pathname === "/repos" ? "text-gitlore-accent" : "text-gitlore-text-secondary hover:text-gitlore-text"
+                  }`}
+                >
+                  Switch repo
+                </Link>
+              ) : null}
               {user && repoReady ? (
                 <span
                   className="ml-1 hidden max-w-[200px] truncate rounded-sm border border-gitlore-border/60 bg-gitlore-code/40 px-2 py-1 font-code text-[11px] text-gitlore-accent xl:inline-block"
@@ -333,20 +447,17 @@ const Navbar = () => {
           </div>
         )}
 
-        {/* Desktop actions */}
-        <div className="hidden shrink-0 items-center gap-2 md:flex md:gap-3">
-          {user && (
-            <div className="flex max-w-[min(280px,32vw)] flex-col items-end gap-0.5 md:max-lg:max-w-[200px]">
-              <span className="truncate font-code text-[11px] text-gitlore-text-secondary md:max-lg:max-w-[120px]">
-                @{user.username}
-              </span>
-              {ghProfile ? (
-                <span className="truncate font-code text-[10px] text-gitlore-text-secondary/90" title={ghProfile.name ?? ghProfile.login}>
-                  {ghProfile.public_repos} public repos · {ghProfile.followers} followers
-                </span>
-              ) : null}
-            </div>
-          )}
+        {/* Desktop actions — Live repo lives in nav links only to avoid duplicate CTAs */}
+        <div className="hidden shrink-0 items-center gap-2 md:flex md:gap-2">
+          <button
+            type="button"
+            onClick={() => toggleTheme()}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-gitlore-text-secondary transition-colors hover:bg-gitlore-surface-hover hover:text-gitlore-text"
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" aria-hidden /> : <Moon className="h-4 w-4" aria-hidden />}
+          </button>
           <button
             type="button"
             onClick={() => setGuardrailsOpen(true)}
@@ -355,21 +466,7 @@ const Navbar = () => {
             Guardrails
           </button>
           {user ? (
-            <button
-              type="button"
-              onClick={() => void signOut()}
-              className="rounded-sm border border-gitlore-border px-3 py-1.5 text-sm text-gitlore-text-secondary transition-colors hover:text-gitlore-text md:max-lg:text-[13px]"
-            >
-              Log out
-            </button>
-          ) : null}
-          {user ? (
-            <Link
-              to="/app"
-              className="rounded-sm bg-gitlore-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gitlore-accent-hover md:max-lg:text-[13px]"
-            >
-              Live repo
-            </Link>
+            <UserMenuButton user={user} ghProfile={ghProfile} signOut={signOut} />
           ) : (
             <button
               type="button"
@@ -438,16 +535,48 @@ const Navbar = () => {
                     >
                       Live repo
                     </Link>
+                    {user ? (
+                      <Link
+                        to="/repos"
+                        className="rounded-sm px-3 py-3 text-sm text-gitlore-text transition-colors hover:bg-gitlore-surface"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        Switch repo
+                      </Link>
+                    ) : null}
                   </div>
 
                   {user && (
-                    <div className="border-b border-gitlore-border px-3 py-3 font-code text-[11px] text-gitlore-text-secondary">
-                      @{user.username}
-                      {ghProfile ? (
-                        <div className="mt-1 text-[10px]">
-                          {ghProfile.public_repos} public repos · {ghProfile.followers} followers
+                    <div className="border-b border-gitlore-border px-3 py-3">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-gitlore-border bg-gitlore-code">
+                          {!mobileAvatarBroken && (user.avatar_url || ghProfile?.avatar_url) ? (
+                            <img
+                              src={user.avatar_url || ghProfile?.avatar_url || ""}
+                              alt=""
+                              className="h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                              onError={() => setMobileAvatarBroken(true)}
+                            />
+                          ) : (
+                            <User className="h-5 w-5 text-gitlore-text-secondary" aria-hidden />
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-code text-xs text-gitlore-text-secondary">@{user.username}</p>
+                          {ghProfile?.name ? <p className="truncate text-sm font-medium text-gitlore-text">{ghProfile.name}</p> : null}
                         </div>
-                      ) : null}
+                      </div>
+                      <a
+                        href={ghProfile?.login ? `https://github.com/${ghProfile.login}` : `https://github.com/${user.username}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 flex w-full items-center justify-center gap-2 rounded-sm border border-gitlore-border bg-gitlore-code/40 py-2.5 text-sm text-gitlore-accent transition-colors hover:border-gitlore-accent/40 hover:bg-gitlore-surface-hover"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        GitHub profile
+                        <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                      </a>
                     </div>
                   )}
 
@@ -462,6 +591,16 @@ const Navbar = () => {
                     <button
                       type="button"
                       onClick={() => {
+                        toggleTheme();
+                      }}
+                      className="flex w-full items-center justify-center gap-2 rounded-sm border border-gitlore-border px-3 py-3 text-sm text-gitlore-text transition-colors hover:bg-gitlore-surface"
+                    >
+                      {theme === "dark" ? <Sun className="h-4 w-4" aria-hidden /> : <Moon className="h-4 w-4" aria-hidden />}
+                      {theme === "dark" ? "Light mode" : "Dark mode"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
                         setMenuOpen(false);
                         setGuardrailsOpen(true);
                       }}
@@ -469,15 +608,7 @@ const Navbar = () => {
                     >
                       Guardrails
                     </button>
-                    {user ? (
-                      <Link
-                        to="/app"
-                        className="block w-full rounded-sm bg-gitlore-accent py-3 text-center text-sm font-medium text-white transition-colors hover:bg-gitlore-accent-hover"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        Live repo
-                      </Link>
-                    ) : (
+                    {!user ? (
                       <button
                         type="button"
                         className="block w-full rounded-sm bg-gitlore-accent py-3 text-center text-sm font-medium text-white transition-colors hover:bg-gitlore-accent-hover"
@@ -488,19 +619,19 @@ const Navbar = () => {
                       >
                         Connect GitHub
                       </button>
-                    )}
-                    {user && (
+                    ) : null}
+                    {user ? (
                       <button
                         type="button"
                         onClick={() => {
                           setMenuOpen(false);
                           void signOut();
                         }}
-                        className="w-full rounded-sm border border-gitlore-border py-3 text-sm text-gitlore-text-secondary"
+                        className="w-full rounded-sm border border-gitlore-border py-3 text-sm text-gitlore-error transition-colors hover:bg-gitlore-surface-hover"
                       >
                         Log out
                       </button>
-                    )}
+                    ) : null}
                   </div>
             </div>
           </div>

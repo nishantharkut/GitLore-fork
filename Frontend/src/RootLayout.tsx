@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar";
+import { PostAuthRedirect } from "./components/PostAuthRedirect";
 import { NavigationLoadingOverlay, NavigationProgress, RoutePendingFallback } from "./components/PageTransitions";
 import { RouteTransitionGateProvider, useShowRouteTransitionChrome } from "./context/RouteTransitionGate";
 
@@ -11,6 +12,7 @@ function MainChrome() {
 
   return (
     <>
+      <PostAuthRedirect />
       <NavigationProgress />
       {hasNav && <Navbar />}
       <main

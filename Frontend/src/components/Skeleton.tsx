@@ -48,38 +48,65 @@ export const PageSkeleton = () => (
   </div>
 );
 
-/** Matches /overview two-column layout + graph card */
-export const OverviewSkeleton = () => (
-  <div className="min-h-[calc(100vh-56px)] bg-gitlore-bg">
-    <div className="mx-auto max-w-[1200px] px-4 py-8 md:px-8 md:py-12">
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-5 md:gap-8">
-        <div className="space-y-6 md:col-span-2">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-9 w-full max-w-md" />
-          <Skeleton className="h-4 w-full" />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-20" />
-            ))}
-          </div>
-          <Skeleton className="h-4 w-40" />
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-          <Skeleton className="h-3 w-full max-w-xs" />
-          <Skeleton className="h-10 w-full" />
+/** Matches /overview two-column layout + graph/chat column */
+export function OverviewSkeleton({ message }: { message?: string } = {}) {
+  return (
+    <div className="flex min-h-[calc(100vh-56px)] flex-col bg-gitlore-bg">
+      {message ? (
+        <div
+          className="flex shrink-0 items-center justify-center gap-3 border-b border-gitlore-border bg-gitlore-surface/90 px-4 py-4 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <Spinner className="h-5 w-5 border-2" label={message} />
+          <p className="text-center text-sm font-medium text-gitlore-text-secondary">{message}</p>
         </div>
-        <div className="md:col-span-3">
-          <Skeleton className="mb-2 h-3 w-28" />
-          <Skeleton className="mb-6 h-6 w-56" />
-          <Skeleton className="h-[min(420px,55vh)] w-full rounded-sm border border-gitlore-border/50" />
+      ) : null}
+      <div className="flex-1">
+        <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-8 md:py-12">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-12 md:gap-8">
+            <div className="space-y-8 md:col-span-5">
+              <div>
+                <Skeleton className="mb-2 h-3 w-24" />
+                <Skeleton className="h-9 w-full max-w-lg" />
+                <Skeleton className="mt-2 h-4 w-full max-w-md" />
+              </div>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <Skeleton key={i} className="h-20" />
+                ))}
+              </div>
+              <div>
+                <Skeleton className="mb-3 h-3 w-40" />
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              </div>
+              <Skeleton className="h-3 w-full max-w-sm" />
+              <div>
+                <Skeleton className="mb-3 h-3 w-48" />
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-6 w-full" />
+                  ))}
+                </div>
+              </div>
+              <Skeleton className="h-11 w-full" />
+            </div>
+            <div className="flex min-h-0 flex-col gap-4 md:col-span-7">
+              <Skeleton className="h-[min(280px,40vh)] w-full rounded-sm border border-gitlore-border/50" />
+              <Skeleton className="h-24 w-full rounded-sm border border-gitlore-border/50" />
+              <Skeleton className="h-[420px] w-full rounded-sm border border-gitlore-border/50" />
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+}
 
 /** Matches /patterns repo cards + catalog grid */
 export const PatternsSkeleton = () => (

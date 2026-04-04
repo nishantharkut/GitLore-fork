@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
 import { Send, Bot, User, ExternalLink, Loader, Sparkles } from "lucide-react";
 import { useRepo } from "@/context/RepoContext";
 import { postJSON, fetchChatGraphStatus, type ChatGraphStatusResponse } from "@/lib/gitloreApi";
@@ -34,13 +35,71 @@ const TYPE_COLORS: Record<string, string> = {
   other: "text-gray-500",
 };
 
+/** Markdown mapping for assistant replies — scoped to the chat bubble. */
+const assistantMarkdownComponents = {
+  h1: (props: ComponentPropsWithoutRef<"h1">) => (
+    <h1 className="mb-2 mt-3 text-base font-semibold text-gitlore-text first:mt-0" {...props} />
+  ),
+  h2: (props: ComponentPropsWithoutRef<"h2">) => (
+    <h2 className="mb-2 mt-3 text-[15px] font-semibold text-gitlore-text first:mt-0" {...props} />
+  ),
+  h3: (props: ComponentPropsWithoutRef<"h3">) => (
+    <h3 className="mb-1.5 mt-2 text-sm font-semibold text-gitlore-text first:mt-0" {...props} />
+  ),
+  p: (props: ComponentPropsWithoutRef<"p">) => <p className="mb-2 last:mb-0 leading-relaxed text-gitlore-text" {...props} />,
+  ul: (props: ComponentPropsWithoutRef<"ul">) => (
+    <ul className="mb-2 list-inside list-disc space-y-1 pl-0.5 text-gitlore-text marker:text-gitlore-text-secondary" {...props} />
+  ),
+  ol: (props: ComponentPropsWithoutRef<"ol">) => (
+    <ol className="mb-2 list-inside list-decimal space-y-1 pl-0.5 text-gitlore-text marker:text-gitlore-text-secondary" {...props} />
+  ),
+  li: (props: ComponentPropsWithoutRef<"li">) => <li className="leading-relaxed [&>p]:mb-0" {...props} />,
+  strong: (props: ComponentPropsWithoutRef<"strong">) => <strong className="font-semibold text-gitlore-text" {...props} />,
+  em: (props: ComponentPropsWithoutRef<"em">) => <em className="italic text-gitlore-text" {...props} />,
+  a: (props: ComponentPropsWithoutRef<"a">) => (
+    <a
+      className="text-gitlore-accent underline decoration-gitlore-accent/40 underline-offset-2 transition-colors hover:text-gitlore-accent-hover"
+      target="_blank"
+      rel="noopener noreferrer"
+      {...props}
+    />
+  ),
+  code: ({ className, children, ...props }: ComponentPropsWithoutRef<"code">) => {
+    const isBlock = /language-/.test(className || "");
+    if (isBlock) {
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code
+        className="rounded-sm bg-gitlore-code px-1.5 py-0.5 font-code text-[13px] text-gitlore-accent"
+        {...props}
+      >
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }: { children?: ReactNode }) => (
+    <pre className="mb-2 max-w-full overflow-x-auto rounded-sm border border-gitlore-border bg-gitlore-code p-3 font-code text-[13px] leading-relaxed text-gitlore-text">
+      {children}
+    </pre>
+  ),
+  blockquote: (props: ComponentPropsWithoutRef<"blockquote">) => (
+    <blockquote className="mb-2 border-l-2 border-gitlore-border pl-3 text-gitlore-text-secondary italic" {...props} />
+  ),
+  hr: () => <hr className="my-3 border-gitlore-border" />,
+};
+
 export function ChatPanel() {
   const { target, repoReady } = useRepo();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [chatStatus, setChatStatus] = useState<ChatGraphStatusResponse | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!repoReady) {
@@ -61,7 +120,11 @@ export function ChatPanel() {
   }, [repoReady, target.owner, target.name]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
   }, [messages, loading]);
 
   const handleSend = async () => {
@@ -150,7 +213,7 @@ export function ChatPanel() {
         </p>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4">
+      <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4">
         {messages.length === 0 && (
           <div className="py-6 text-center text-sm leading-relaxed text-gitlore-text-secondary">
             Try: &ldquo;Why did we change authentication?&rdquo; or &ldquo;What refactors touched the API layer?&rdquo;
@@ -171,7 +234,13 @@ export function ChatPanel() {
                   : "bg-gitlore-code text-gitlore-text"
               }`}
             >
-              <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+              {msg.role === "user" ? (
+                <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+              ) : (
+                <div className="min-w-0 break-words">
+                  <ReactMarkdown components={assistantMarkdownComponents}>{msg.content}</ReactMarkdown>
+                </div>
+              )}
               {msg.role === "assistant" &&
                 (msg.searchTier ||
                   msg.nodesUsed != null ||
@@ -248,7 +317,6 @@ export function ChatPanel() {
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <div className="shrink-0 border-t border-gitlore-border p-3">

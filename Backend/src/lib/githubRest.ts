@@ -484,6 +484,9 @@ type GithubRepoListItemRaw = {
   private: boolean;
   pushed_at: string | null;
   html_url: string;
+  description?: string | null;
+  language?: string | null;
+  stargazers_count?: number;
 };
 
 export type GithubRepoSummary = {
@@ -494,6 +497,9 @@ export type GithubRepoSummary = {
   private: boolean;
   pushedAt: string | null;
   htmlUrl: string;
+  description?: string | null;
+  language?: string | null;
+  stars?: number;
 };
 
 function mapRepoItem(item: GithubRepoListItemRaw): GithubRepoSummary {
@@ -505,6 +511,9 @@ function mapRepoItem(item: GithubRepoListItemRaw): GithubRepoSummary {
     private: item.private,
     pushedAt: item.pushed_at,
     htmlUrl: item.html_url,
+    description: item.description ?? null,
+    language: item.language ?? null,
+    stars: typeof item.stargazers_count === "number" ? item.stargazers_count : undefined,
   };
 }
 

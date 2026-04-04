@@ -1,5 +1,6 @@
 import { BlurReveal } from "../effects/BlurReveal";
 import { ConnectGithubCta } from "../ConnectGithubCta";
+import { useAuth } from "@/context/AuthContext";
 import { Magnet } from "../effects/Magnet";
 import { SplitText } from "../effects/SplitText";
 import { TextScramble } from "../effects/TextScramble";
@@ -37,6 +38,9 @@ const HeroCodeVisual = () => (
 );
 
 const HeroSection = () => {
+  const { user, loading } = useAuth();
+  const primaryCtaLabel = user ? "Go to Dashboard" : "Connect GitHub Repo";
+
   return (
     <section className="relative flex min-h-[100dvh] flex-col overflow-hidden pb-16 pt-[calc(52px+2.75rem)] md:pt-[calc(52px+4.5rem)] lg:pt-[calc(52px+5.5rem)]">
       <div className="landing-container relative z-[1] flex w-full flex-1 flex-col">
@@ -64,7 +68,7 @@ const HeroSection = () => {
             <div className="mt-8 flex flex-wrap gap-3">
               <Magnet strength={0.2}>
                 <ConnectGithubCta className="inline-flex h-11 items-center rounded-[4px] bg-[var(--accent)] px-6 font-heading text-[13px] font-medium text-white transition-[filter] duration-200 hover:brightness-110">
-                  Connect GitHub Repo
+                  {loading ? "Connect GitHub Repo" : primaryCtaLabel}
                 </ConnectGithubCta>
               </Magnet>
               <a
@@ -74,6 +78,11 @@ const HeroSection = () => {
                 See how it works
               </a>
             </div>
+            {user && !loading ? (
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                Welcome back, <span className="font-code text-[var(--text)]">@{user.username}</span>
+              </p>
+            ) : null}
           </div>
 
           <div className="mx-auto hidden w-full max-w-[380px] lg:mx-0 lg:block lg:max-w-none lg:justify-self-end">
