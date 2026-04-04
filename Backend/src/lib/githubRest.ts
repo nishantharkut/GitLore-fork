@@ -548,6 +548,32 @@ export async function createGitRef(
   );
 }
 
+/**
+ * Point an existing ref at `sha`. Use `force: true` to reset a branch (e.g. re-run auto-fix from current PR head).
+ * `refName`: short branch name or `refs/heads/...`.
+ */
+export async function updateGitRef(
+  token: string,
+  owner: string,
+  repo: string,
+  refName: string,
+  sha: string,
+  force = false
+): Promise<{ ref: string; url: string }> {
+  const branchShort = refName.startsWith("refs/heads/")
+    ? refName.slice("refs/heads/".length)
+    : refName.startsWith("refs/")
+      ? refName.replace(/^refs\/heads\//, "")
+      : refName;
+  const refPath = encodeURIComponent(`heads/${branchShort}`);
+  return githubRestJsonMethod<{ ref: string; url: string }>(
+    token,
+    "PATCH",
+    `${githubRepoApiRoot(owner, repo)}/git/refs/${refPath}`,
+    { sha, force }
+  );
+}
+
 /** Update a file on a branch (creates a commit). */
 export async function updateRepoFileContents(
   token: string,

@@ -9,6 +9,7 @@ import {
   getPullRequestRest,
   listPullRequestReviewCommentsRest,
   createGitRef,
+  updateGitRef,
   updateRepoFileContents,
   createPullRequestRest,
 } from "./githubRest";
@@ -124,10 +125,17 @@ export function validateFixPayload(
   }
   const changed = estimateChangedLineCount(fullOriginal, fullFixed);
   if (changed > 15) warnings.push(`Change spans ~${changed} lines (max 15)`);
-  /* Balance must be checked on the full file: a tail-only slice misses opens that
-   * closed in the suffix → false "unbalanced" on long files (e.g. TS closing braces at EOF). */
-  const bracketOk = bracketBalanceOk(fullFixed);
-  if (!bracketOk) warnings.push("Bracket/brace balance check failed");
+  /* Full-file naive scan; if the original also fails, braces in strings/templates likely tripped
+   * the heuristic — warn but do not fail. If original balanced and fixed does not, fail. */
+  const origBal = bracketBalanceOk(fullOriginal);
+  const fixedBal = bracketBalanceOk(fullFixed);
+  let bracketOk = fixedBal;
+  if (!fixedBal && !origBal) {
+    bracketOk = true;
+    warnings.push("Bracket balance heuristic inconclusive (original also fails naive check)");
+  } else if (!fixedBal) {
+    warnings.push("Bracket/brace balance check failed");
+  }
   const passed = changed <= 15 && bracketOk;
   return { passed, warnings };
 }
@@ -576,6 +584,8 @@ export async function runAutoFixApply(
       (e instanceof GithubRestError && e.status === 422) ||
       /already exists|reference already exists/i.test(e instanceof Error ? e.message : String(e));
     if (!exists) throw e;
+    /* Branch from a prior run: reset tip to current PR head so blobs at headSha match commits. */
+    await updateGitRef(token, owner, name, branch, headSha, true);
   }
 
   const applied: Array<{ comment_id: number; commit_sha: string; file: string; tier: number }> = [];

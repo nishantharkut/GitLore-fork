@@ -1,4 +1,8 @@
-import type { AutoFixClassifiedRow, AutoFixClassifyResponse } from "@/lib/gitloreApi";
+import type {
+  AutoFixClassifiedRow,
+  AutoFixClassifyResponse,
+  PullDiffReviewFile,
+} from "@/lib/gitloreApi";
 import { AutoFixSummary } from "./AutoFixSummary";
 
 export type PrReviewOverviewComment = {
