@@ -5,6 +5,7 @@ import { logger } from "hono/logger";
 import { serve } from "@hono/node-server";
 import { connectDB } from "./lib/mongo";
 import { authMiddleware } from "./middleware/auth";
+import { webhookRouter } from "./routes/webhooks";
 import { authRouter } from "./routes/auth";
 import { analyzeRouter } from "./routes/analyze";
 import { explainRouter } from "./routes/explain";
@@ -68,6 +69,8 @@ app.route("/test", realTestRouter);
 app.get("/health", (c) => {
   return c.json({ status: "ok", timestamp: new Date().toISOString() });
 });
+
+app.route("/webhooks", webhookRouter);
 
 app.use("/api/*", authMiddleware);
 

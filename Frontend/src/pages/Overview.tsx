@@ -4,6 +4,7 @@ import { FadeIn } from "../components/effects/FadeIn";
 import { ChatPanel } from "../components/ChatPanel";
 import { EnforcementLog } from "../components/EnforcementLog";
 import { IngestButton } from "../components/IngestButton";
+import { PrIntelligenceButton } from "../components/PrIntelligenceButton";
 import { KnowledgeDecisionsGraph } from "../components/KnowledgeDecisionsGraph";
 import { invalidateKnowledgeSuggestionsCache } from "../components/KnowledgeSuggestions";
 import { OverviewSkeleton, Spinner } from "../components/Skeleton";
@@ -447,12 +448,15 @@ const Overview = () => {
           {/* Knowledge graph, ingest, chat */}
           <div className="flex min-h-0 flex-col gap-4 md:col-span-7">
             <KnowledgeDecisionsGraph refreshKey={refreshChat} />
-            <IngestButton
-              onComplete={() => {
-                invalidateKnowledgeSuggestionsCache();
-                setRefreshChat((p) => p + 1);
-              }}
-            />
+            <div className="flex flex-col gap-3">
+              <PrIntelligenceButton />
+              <IngestButton
+                onComplete={() => {
+                  invalidateKnowledgeSuggestionsCache();
+                  setRefreshChat((p) => p + 1);
+                }}
+              />
+            </div>
             <ChatPanel key={refreshChat} onChatComplete={() => setEnforcementTick((t) => t + 1)} />
             <EnforcementLog refreshKey={refreshChat + enforcementTick} />
           </div>

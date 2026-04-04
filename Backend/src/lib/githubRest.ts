@@ -57,6 +57,23 @@ export async function githubRestJsonMethod<T>(
   return text ? (JSON.parse(text) as T) : ({} as T);
 }
 
+/** DELETE (204 / empty body). Treats 404 as success (already removed). */
+export async function githubRestDelete(token: string, path: string): Promise<void> {
+  const res = await fetch(`${GH_API}${path}`, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+  if (res.status === 404) return;
+  if (!res.ok) {
+    const text = await res.text();
+    throw new GithubRestError(res.status, text.slice(0, 500));
+  }
+}
+
 export async function githubRestText(
   token: string,
   path: string,

@@ -252,6 +252,41 @@ export async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return data as T;
 }
 
+export type SetupWebhookResponse = {
+  status: "webhook_registered" | "already_registered";
+  url?: string;
+};
+
+/** POST /api/repo/:owner/:name/setup-webhook — registers GitHub PR webhook. Exposes HTTP status on thrown Error as `.status`. */
+export async function setupRepoWebhook(
+  owner: string,
+  name: string
+): Promise<SetupWebhookResponse> {
+  const path = `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/setup-webhook`;
+  const res = await apiFetch(path, { method: "POST", body: JSON.stringify({}) });
+  let data: Record<string, unknown> = {};
+  try {
+    data = (await res.json()) as Record<string, unknown>;
+  } catch {
+    /* ignore */
+  }
+  if (!res.ok) {
+    let msg = (data.error as string) || (data.message as string) || res.statusText;
+    if (res.status === 401) {
+      msg =
+        "Your GitHub session is missing or expired. Sign out and sign in again with GitHub, or refresh the page.";
+    }
+    const err = new Error(msg) as Error & { status: number };
+    err.status = res.status;
+    throw err;
+  }
+  return data as SetupWebhookResponse;
+}
+
+export function prIntelLocalStorageKey(owner: string, name: string): string {
+  return `gitlore-webhook-${owner}/${name}`.toLowerCase();
+}
+
 export async function postNarrate(text: string): Promise<{ status?: string; message?: string }> {
   return postJSON("/api/narrate", { text });
 }

@@ -29,6 +29,8 @@ import {
   searchRepoCountRest,
   countCommitsApproxRest,
   GithubRestError,
+  githubRestJson,
+  githubRestJsonMethod,
 } from "../lib/githubRest";
 import { getOrScanRepoPatterns } from "../lib/patternScanner";
 
@@ -493,6 +495,133 @@ repoRouter.get("/repo/:owner/:name/scan-patterns", async (c) => {
     return c.json(
       {
         error: "Failed to scan repository patterns",
+        message:
+          process.env.NODE_ENV === "development" && error instanceof Error
+            ? error.message
+            : undefined,
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/repo/:owner/:name/setup-webhook
+ * Register GitHub pull_request webhook for automatic PR intelligence (CodeRabbit-style).
+ */
+repoRouter.post("/repo/:owner/:name/setup-webhook", async (c) => {
+  try {
+    const user = getCurrentUser(c);
+    if (!user) return c.json({ error: "Not authenticated" }, 401);
+
+    const owner = c.req.param("owner");
+    const name = c.req.param("name");
+    if (!owner || !name) {
+      return c.json({ error: "Missing owner or repository name" }, 400);
+    }
+
+    const publicBase = process.env.BACKEND_PUBLIC_URL?.trim().replace(/\/+$/, "");
+    if (!publicBase) {
+      return c.json({ error: "BACKEND_PUBLIC_URL not configured" }, 400);
+    }
+
+    const webhookUrl = `${publicBase}/webhooks/github`;
+    const repoKey = `${owner}/${name}`.toLowerCase();
+    const db = getDB();
+    const coll = db.collection("webhook_registrations");
+    const token = user.access_token;
+    const hooksPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/hooks`;
+
+    const existing = await coll.findOne({ repo: repoKey });
+    if (existing?.webhookId != null) {
+      try {
+        const hooks = await githubRestJson<
+          Array<{ id: number; active: boolean }>
+        >(token, hooksPath);
+        const stillThere = hooks.some((h) => h.id === existing.webhookId && h.active);
+        if (stillThere) {
+          return c.json({ status: "already_registered", url: webhookUrl });
+        }
+      } catch {
+        /* fall through to create / upsert */
+      }
+    }
+
+    const secret = process.env.GITHUB_WEBHOOK_SECRET?.trim() || "";
+    const hookBody = {
+      name: "web",
+      config: {
+        url: webhookUrl,
+        content_type: "json",
+        secret,
+        insecure_ssl: "0" as const,
+      },
+      events: ["pull_request"],
+      active: true,
+    };
+
+    let webhookId: number | undefined;
+    try {
+      const created = await githubRestJsonMethod<{ id: number }>(
+        token,
+        "POST",
+        hooksPath,
+        hookBody
+      );
+      webhookId = created.id;
+    } catch (e) {
+      if (e instanceof GithubRestError && e.status === 404) {
+        return c.json(
+          { error: "Admin access required to register webhooks on this repository" },
+          403
+        );
+      }
+      if (e instanceof GithubRestError && e.status === 422) {
+        try {
+          const hooks = await githubRestJson<
+            Array<{ id: number; config?: { url?: string } }>
+          >(token, hooksPath);
+          const match = hooks.find((h) => h.config?.url === webhookUrl);
+          if (match) webhookId = match.id;
+        } catch {
+          /* ignore */
+        }
+        if (webhookId == null) {
+          return c.json({ error: "Could not create webhook (validation)." }, 422);
+        }
+      } else {
+        throw e;
+      }
+    }
+
+    if (webhookId == null) {
+      return c.json({ error: "Failed to create webhook" }, 500);
+    }
+
+    await coll.updateOne(
+      { repo: repoKey },
+      {
+        $set: {
+          repo: repoKey,
+          owner,
+          name,
+          webhookId,
+          webhookUrl,
+          registeredBy: user._id,
+          githubToken: user.access_token,
+          username: user.username,
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+
+    return c.json({ status: "webhook_registered", url: webhookUrl });
+  } catch (error) {
+    console.error("setup-webhook error:", error);
+    return c.json(
+      {
+        error: "Failed to register webhook",
         message:
           process.env.NODE_ENV === "development" && error instanceof Error
             ? error.message
