@@ -222,7 +222,7 @@ function prepareGeminiJsonText(responseText: string): string {
   return escapeNewlinesInsideJsonStrings(s);
 }
 
-function parseModelJson<T>(responseText: string, schema: z.ZodType<T>): T {
+export function parseModelJson<T>(responseText: string, schema: z.ZodType<T>): T {
   const jsonStr = prepareGeminiJsonText(responseText);
   let parsed: unknown;
   try {
@@ -243,11 +243,12 @@ function parseModelJson<T>(responseText: string, schema: z.ZodType<T>): T {
 const structuredJsonGenerationConfig = {
   maxOutputTokens: 8192,
   temperature: 0.25,
+  responseMimeType: "application/json" as const,
 };
 
-/** v1beta + responseMimeType yields valid JSON from Gemini (avoids truncated prose-style replies). */
+/** Explanations are ~200–500 words; 4K tokens is plenty (compact retry handles edge cases). */
 const explainJsonGenerationConfig = {
-  maxOutputTokens: 16_384,
+  maxOutputTokens: 4096,
   temperature: 0.12,
   responseMimeType: "application/json",
 } as const;
@@ -318,9 +319,26 @@ export const narrativeSchema = z.object({
 
 export type Narrative = z.infer<typeof narrativeSchema>;
 
+const NARRATIVE_SYSTEM = `You are a software archaeology expert reconstructing why code decisions were made. You analyze git blame data, PR discussions, review comments, and linked issues. You are precise — never fabricate quotes, names, or events not in the source data. When evidence is thin, say so with low confidence rather than guessing.`;
+
 const EXPLAIN_SYSTEM = `You are a code review mentor. Given a terse review comment and surrounding code context, explain exactly what is wrong in THIS specific code (not generically), why it matters in production, and provide the corrected code. Reference actual variable names and function names from the code shown.
 
 JSON rules (critical): You must output valid JSON only. Do not put raw double-quote characters inside any string value — use single quotes for quoted snippets or escape as \\". Keep each text field under 1200 characters; prefer concise paragraphs. Use \\n inside strings for line breaks in code samples. Never be generic.`;
+
+const EXPLAIN_USER_KEY_GUIDE = `Respond with a single JSON object (no markdown fences). Keys:
+- pattern_name: The specific anti-pattern name (e.g., "N+1 Query", "Unused Import" — NOT "Code Review")
+- whats_wrong: What is wrong in THIS specific code. Reference actual variable/function names from the code shown. Not generic.
+- why_it_matters: Production impact. Why should the developer care? Be specific to this codebase.
+- fix: The corrected code snippet. Must be directly applicable, not pseudo-code.
+- principle: The engineering principle violated (e.g., "Single Responsibility", "Fail Fast")
+- confidence: "high" if issue is clear and fix is certain, "medium" if context-dependent, "low" if ambiguous
+- confidence_reason: One sentence explaining confidence level
+- docs_links: Array of relevant docs URLs. Empty array if none.`;
+
+const explainGenerateConfig = {
+  ...explainJsonGenerationConfig,
+  systemInstruction: EXPLAIN_SYSTEM,
+} as const;
 
 /**
  * Generate explanation for a code review comment (Gemini 2.5 Flash structured JSON).
@@ -337,10 +355,7 @@ export async function explainComment(input: ExplainCommentInput): Promise<Explan
     ? clipForPrompt("Surrounding context", input.surroundingContext, 14_000)
     : "(unavailable)";
 
-  const prompt = `${EXPLAIN_SYSTEM}
-
-Respond with a single JSON object (no markdown fences) using exactly these keys:
-pattern_name, whats_wrong, why_it_matters, fix, principle, confidence (one of: high, medium, low), confidence_reason, docs_links (array of URL strings, may be empty).
+  const prompt = `${EXPLAIN_USER_KEY_GUIDE}
 
 Terse review comment: ${JSON.stringify(input.comment)}
 File path: ${input.filePath}
@@ -370,9 +385,7 @@ ${patternBlock}`;
       ai.models.generateContent({
         model: GEMINI_EXPLAIN_MODEL,
         contents: text,
-        config: {
-          ...explainJsonGenerationConfig,
-        },
+        config: explainGenerateConfig,
       })
     );
 
@@ -401,9 +414,7 @@ ${patternBlock}`;
       console.warn("[explain] MAX_TOKENS — retrying with compact prompt");
     }
 
-    const compactPrompt = `${EXPLAIN_SYSTEM}
-
-Your previous structured reply was too long or invalid JSON. Reply with ONE compact JSON object only (same keys as before). Each string value max 500 characters. Escape every " inside strings as \\". No markdown.
+    const compactPrompt = `Your previous structured reply was too long or invalid JSON. Reply with ONE compact JSON object only (same keys as before: pattern_name, whats_wrong, why_it_matters, fix, principle, confidence, confidence_reason, docs_links). Each string value max 500 characters. Escape every " inside strings as \\". No markdown.
 
 Review comment: ${JSON.stringify(input.comment)}
 File: ${input.filePath}
@@ -480,9 +491,7 @@ Respond with one JSON object: { "result": "ok"|"COMPLEX"|"UNCERTAIN", "new_regio
       ai.models.generateContent({
         model: GEMINI_EXPLAIN_MODEL,
         contents: prompt,
-        config: {
-          ...explainJsonGenerationConfig,
-        },
+        config: explainGenerateConfig,
       })
     );
     const text = result.text?.trim() ?? "";
@@ -522,24 +531,22 @@ export async function generateNarrative(
     .filter(Boolean)
     .join("\n\n");
 
-  const prompt = `Respond ONLY with valid JSON (no other text). Reconstruct why this code decision was made.
+  const prompt = `Respond ONLY with valid JSON (no other text). Keys:
+- one_liner: Single sentence capturing what happened and why. Max 120 chars.
+- context: What problem prompted this change? Reference specific issues if mentioned.
+- debate: What tradeoffs were discussed? If no debate existed, say "No recorded discussion."
+- debate_quotes: Array of {author, text, url (optional), source_type (optional: pr_review|pr_comment|issue_comment|commit_message)}. REAL quotes only. Empty array if none.
+- decision: Final choice and rationale. 1-2 sentences.
+- impact: What was the result? Be specific.
+- confidence: "high" if PR has reviews + discussion, "medium" if title + description only, "low" if just commit message.
+- confidence_reason: Why this confidence level. One sentence.
+- sources: {pr_url (optional), issue_urls (optional array), review_comment_count (optional number), data_signals: array of git_blame|pull_request|review_comments|linked_issues|commit_message_only|pattern_match}
 
-{
-  "one_liner": "One line summary",
-  "context": "What problem was being solved?",
-  "debate": "What tradeoffs or disagreements?",
-  "debate_quotes": [{"author": "name", "text": "quote", "url": "", "source_type": "pr_review"}],
-  "decision": "What was chosen and why?",
-  "impact": "Result of decision",
-  "confidence": "high",
-  "confidence_reason": "Why this confidence?",
-  "sources": {
-    "pr_url": "",
-    "issue_urls": [],
-    "review_comment_count": 0,
-    "data_signals": ["git_blame", "pull_request", "review_comments", "linked_issues"]
-  }
-}
+Data quality rules:
+- Commit message only → confidence MUST be "low", prefix context with "Based solely on the commit message..."
+- PR title + description but no reviews → confidence should be "medium"
+- PR with reviews and discussion → confidence can be "high"
+- Never pad thin data with speculation. Short honest answers beat long fabricated ones.
 
 Data:
 ${contextData}`;
@@ -549,7 +556,10 @@ ${contextData}`;
       ai.models.generateContent({
         model: GEMINI_GENERATION_MODEL,
         contents: prompt,
-        config: structuredJsonGenerationConfig,
+        config: {
+          ...structuredJsonGenerationConfig,
+          systemInstruction: NARRATIVE_SYSTEM,
+        },
       })
     );
 
@@ -693,6 +703,11 @@ Rules:
 - Keep technical terms (file paths, PR numbers, repo names) in Latin script when clearer.
 - Stay concise; do not add facts not in the source.
 
+TTS optimization:
+- Use short sentences (15-20 words max each)
+- Avoid parenthetical clauses — break into separate sentences
+- Use periods generously for natural pauses
+
 English to translate:
 
 ${english}`;
@@ -701,6 +716,7 @@ ${english}`;
     ai.models.generateContent({
       model: GEMINI_GENERATION_MODEL,
       contents: prompt,
+      config: { temperature: 0.2, maxOutputTokens: 2048 },
     })
   );
 
@@ -747,6 +763,7 @@ Your reply:`;
     ai.models.generateContent({
       model: GEMINI_GENERATION_MODEL,
       contents: prompt,
+      config: { temperature: 0.3, maxOutputTokens: 1024 },
     })
   );
 

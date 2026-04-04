@@ -4,6 +4,8 @@ import {
   getEmbedding,
   GEMINI_GENERATION_MODEL,
   getGoogleGenAI,
+  isGeminiRateLimitError,
+  parseModelJson,
   withGemini429Retry,
 } from "./gemini";
 import { z } from "zod";
@@ -35,6 +37,58 @@ export const knowledgeNodeSchema = z.object({
 });
 
 export type KnowledgeNode = z.infer<typeof knowledgeNodeSchema>;
+
+const KNOWLEDGE_EXTRACT_SYSTEM =
+  "You extract structured knowledge from GitHub Pull Requests for a codebase decision graph. Output ONLY valid JSON. Never fabricate quotes — if no meaningful discussion exists, return empty arrays. Be concise and factual.";
+
+/** JSON Schema subset for Gemini `responseJsonSchema` (aligned with `knowledgeNodeSchema`). */
+const KNOWLEDGE_RESPONSE_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    type: {
+      type: "string",
+      enum: [
+        "feature",
+        "bugfix",
+        "refactor",
+        "architecture",
+        "security",
+        "performance",
+        "documentation",
+        "other",
+      ],
+    },
+    title: { type: "string" },
+    summary: { type: "string" },
+    problem: { type: "string" },
+    decision: { type: "string" },
+    alternatives: { type: "array", items: { type: "string" } },
+    key_quotes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          author: { type: "string" },
+          text: { type: "string" },
+        },
+        required: ["author", "text"],
+      },
+    },
+    impact: { type: "string" },
+    topics: { type: "array", items: { type: "string" } },
+  },
+  required: [
+    "type",
+    "title",
+    "summary",
+    "problem",
+    "decision",
+    "alternatives",
+    "key_quotes",
+    "impact",
+    "topics",
+  ],
+};
 
 /** If `running` but Mongo `updated_at` is older than this, treat as zombie (server restart / crash). */
 export const INGEST_STALE_RUNNING_MS = 20 * 60 * 1000;
@@ -170,37 +224,6 @@ export async function fetchMergedPRs(
   return allPRs.slice(0, limit);
 }
 
-function cleanJsonString(jsonStr: string): string {
-  let cleaned = "";
-  let inString = false;
-  let escapeNext = false;
-  for (let i = 0; i < jsonStr.length; i++) {
-    const char = jsonStr[i];
-    if (escapeNext) {
-      cleaned += char;
-      escapeNext = false;
-      continue;
-    }
-    if (char === "\\") {
-      cleaned += char;
-      escapeNext = true;
-      continue;
-    }
-    if (char === '"' && !escapeNext) {
-      inString = !inString;
-      cleaned += char;
-      continue;
-    }
-    if (inString && (char === "\n" || char === "\r")) {
-      if (char === "\r" && jsonStr[i + 1] === "\n") i++;
-      cleaned += "\\n";
-    } else {
-      cleaned += char;
-    }
-  }
-  return cleaned;
-}
-
 export async function extractKnowledge(pr: any): Promise<KnowledgeNode> {
   const ai = getGoogleGenAI();
 
@@ -228,76 +251,77 @@ export async function extractKnowledge(pr: any): Promise<KnowledgeNode> {
 
   const body = trunc(pr.body || "", 3000);
 
-  const prompt = `You are extracting knowledge from a GitHub Pull Request for a codebase knowledge graph.
+  const optionalBlocks: string[] = [];
+  if (reviews.trim()) optionalBlocks.push(`Reviews:\n${reviews}`);
+  if (comments.trim()) optionalBlocks.push(`Discussion:\n${comments}`);
+  if (issues.trim()) optionalBlocks.push(`Linked Issues:\n${issues}`);
+  const discussionBlock = optionalBlocks.length > 0 ? `\n\n${optionalBlocks.join("\n\n")}` : "";
 
-PR #${pr.number}: "${pr.title}"
+  const prompt = `PR #${pr.number}: "${pr.title}"
 Author: ${pr.author?.login || "unknown"}
 Merged: ${pr.mergedAt || "unknown"}
 Changed files: ${files || "unknown"}
 Lines: +${pr.additions || 0} / -${pr.deletions || 0}
 
 PR Description:
-${body || "(empty)"}
+${body || "(empty)"}${discussionBlock}
 
-${reviews ? `Reviews:\n${reviews}` : "No reviews."}
-
-${comments ? `Discussion:\n${comments}` : "No discussion."}
-
-${issues ? `Linked Issues:\n${issues}` : "No linked issues."}
-
-Respond ONLY with valid JSON:
-{
-  "type": "feature|bugfix|refactor|architecture|security|performance|documentation|other",
-  "title": "One-line title of the design decision or change (max 80 chars)",
-  "summary": "2-3 sentences: what was decided and why",
-  "problem": "What problem was being solved? (1-2 sentences)",
-  "decision": "What was the final decision? (1-2 sentences)",
-  "alternatives": ["Rejected alternative 1", "Rejected alternative 2"],
-  "key_quotes": [{"author": "username", "text": "Important quote from review/discussion"}],
-  "impact": "What was the impact? (1 sentence)",
-  "topics": ["topic1", "topic2"]
-}
+Respond ONLY with valid JSON. Keys:
+- type: feature | bugfix | refactor | architecture | security | performance | documentation | other
+- title: One-line title of the design decision or change (max 80 chars)
+- summary: 2-3 sentences — what was decided and why
+- problem: What problem was being solved (1-2 sentences)
+- decision: Final decision (1-2 sentences)
+- alternatives: Rejected options discussed; empty array if none
+- key_quotes: {author, text} from real review/discussion only; empty array if none
+- impact: One sentence on result
+- topics: 2-5 short tags (e.g. auth, api-design, database)
 
 Rules:
-- Extract REAL quotes from the reviews/comments. Do not fabricate.
-- If no alternatives were discussed, use empty array.
-- If no meaningful quotes exist, use empty array.
-- Topics should be 2-5 short tags (e.g., "auth", "api-design", "database", "testing").
+- Extract REAL quotes only. Do not fabricate.
+- If no alternatives were discussed, use [].
 - Be concise.`;
 
-  const result = await ai.models.generateContent({
-    model: GEMINI_GENERATION_MODEL,
-    contents: prompt,
-  });
+  const knowledgeExtractConfigBase = {
+    systemInstruction: KNOWLEDGE_EXTRACT_SYSTEM,
+    temperature: 0.1,
+    maxOutputTokens: 2048,
+    responseMimeType: "application/json" as const,
+  };
+
+  let result;
+  try {
+    result = await withGemini429Retry(() =>
+      ai.models.generateContent({
+        model: GEMINI_GENERATION_MODEL,
+        contents: prompt,
+        config: {
+          ...knowledgeExtractConfigBase,
+          responseJsonSchema: KNOWLEDGE_RESPONSE_JSON_SCHEMA,
+        },
+      })
+    );
+  } catch (firstErr) {
+    if (isGeminiRateLimitError(firstErr)) throw firstErr;
+    const hint = firstErr instanceof Error ? firstErr.message : String(firstErr);
+    console.warn(
+      `[ingest] extractKnowledge: responseJsonSchema path failed (${hint.slice(0, 200)}); retrying with JSON mime only`
+    );
+    result = await withGemini429Retry(() =>
+      ai.models.generateContent({
+        model: GEMINI_GENERATION_MODEL,
+        contents: prompt,
+        config: knowledgeExtractConfigBase,
+      })
+    );
+  }
 
   const responseText = result.text;
   if (!responseText) {
     throw new Error("Empty Gemini response");
   }
 
-  let jsonStr = responseText.trim();
-  const fence = jsonStr.match(/```(?:json)?\n?([\s\S]*?)\n?```/);
-  if (fence) jsonStr = fence[1].trim();
-  else {
-    const jsonStart = jsonStr.indexOf("{");
-    if (jsonStart !== -1) {
-      let braceCount = 0;
-      let endIdx = jsonStart;
-      for (let i = jsonStart; i < jsonStr.length; i++) {
-        if (jsonStr[i] === "{") braceCount++;
-        if (jsonStr[i] === "}") braceCount--;
-        if (braceCount === 0) {
-          endIdx = i;
-          break;
-        }
-      }
-      if (endIdx > jsonStart) jsonStr = jsonStr.substring(jsonStart, endIdx + 1);
-    }
-  }
-
-  const cleaned = cleanJsonString(jsonStr);
-  const parsed = JSON.parse(cleaned);
-  return knowledgeNodeSchema.parse(parsed);
+  return parseModelJson(responseText, knowledgeNodeSchema);
 }
 
 export interface IngestProgress {

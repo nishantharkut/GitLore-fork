@@ -308,7 +308,8 @@ ${toolJson}
 User question:
 ${question}
 
-Write a clear, structured answer in markdown-friendly plain text.`;
+Write a clear, structured answer in markdown-friendly plain text.
+If many nodes or a large tool JSON payload are present, prioritize the most relevant few points and summarize the rest briefly.`;
 
   const ai = getGoogleGenAI();
   const synthRes = await withGemini429Retry(() =>

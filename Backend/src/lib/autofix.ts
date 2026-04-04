@@ -132,7 +132,10 @@ export function validateFixPayload(
   let bracketOk = fixedBal;
   if (!fixedBal && !origBal) {
     bracketOk = true;
-    warnings.push("Bracket balance heuristic inconclusive (original also fails naive check)");
+    /* Only surface when line budget is OK — otherwise "change spans N lines" is the real blocker and this confuses the draft-PR error string. */
+    if (changed <= 15) {
+      warnings.push("Bracket balance heuristic inconclusive (original also fails naive check)");
+    }
   } else if (!fixedBal) {
     warnings.push("Bracket/brace balance check failed");
   }
