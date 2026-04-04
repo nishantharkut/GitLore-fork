@@ -2,7 +2,12 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getDB } from "../lib/mongo";
 import { getUserToken, getCurrentUser } from "../middleware/auth";
-import { explainComment, matchAntiPattern } from "../lib/gemini";
+import {
+  GEMINI_CLIENT_FRIENDLY_MESSAGE,
+  explainComment,
+  isLikelyGeminiRelatedError,
+  matchAntiPattern,
+} from "../lib/gemini";
 
 export const explainRouter = new Hono();
 
@@ -144,15 +149,18 @@ explainRouter.post("/explain", async (c) => {
       );
     }
 
+    const raw =
+      error instanceof Error ? error.message : String(error);
+    const message = isLikelyGeminiRelatedError(raw)
+      ? GEMINI_CLIENT_FRIENDLY_MESSAGE
+      : process.env.NODE_ENV === "development"
+        ? raw.slice(0, 400)
+        : "Something went wrong. Please try again.";
+
     return c.json(
       {
         error: "Failed to generate explanation",
-        message:
-          process.env.NODE_ENV === "development"
-            ? error instanceof Error
-              ? error.message
-              : "Unknown error"
-            : undefined,
+        message,
       },
       500
     );

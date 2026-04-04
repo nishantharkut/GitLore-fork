@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { FadeIn } from "../components/effects/FadeIn";
 import { ChatPanel } from "../components/ChatPanel";
 import { IngestButton } from "../components/IngestButton";
 import { KnowledgeDecisionsGraph } from "../components/KnowledgeDecisionsGraph";
+import { invalidateKnowledgeSuggestionsCache } from "../components/KnowledgeSuggestions";
 import { OverviewSkeleton, Spinner } from "../components/Skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
@@ -27,6 +28,7 @@ function fmt(n: number) {
 
 const Overview = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const { target, repoFull, setTarget, repoReady } = useRepo();
   const [data, setData] = useState<RepoOverviewResponse | null>(null);
@@ -38,6 +40,11 @@ const Overview = () => {
   const [refreshChat, setRefreshChat] = useState(0);
   const [showAllPRs, setShowAllPRs] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
+
+  const chatPrefill =
+    location.state && typeof (location.state as { chatQuery?: unknown }).chatQuery === "string"
+      ? (location.state as { chatQuery: string }).chatQuery.trim()
+      : undefined;
 
   useEffect(() => {
     if (!user) {
@@ -305,10 +312,11 @@ const Overview = () => {
             <KnowledgeDecisionsGraph refreshKey={refreshChat} />
             <IngestButton
               onComplete={() => {
+                invalidateKnowledgeSuggestionsCache();
                 setRefreshChat((p) => p + 1);
               }}
             />
-            <ChatPanel key={refreshChat} />
+            <ChatPanel key={refreshChat} initialQuestion={chatPrefill} />
           </div>
         </div>
       </div>

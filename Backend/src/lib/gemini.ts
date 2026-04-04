@@ -31,6 +31,21 @@ export function isGeminiRateLimitError(err: unknown): boolean {
   return status === 429 || code === 429;
 }
 
+/** Shown in the app when Gemini fails (quota, key, 403, etc.). Details stay in server logs only. */
+export const GEMINI_CLIENT_FRIENDLY_MESSAGE =
+  "The AI service could not complete this request. Its usage limit may have been reached, or the API key is missing or invalid. Please try again later.";
+
+/** True when the error text clearly comes from our Gemini / Google AI calls. */
+export function isLikelyGeminiRelatedError(raw: string): boolean {
+  return (
+    /from Gemini:/i.test(raw) ||
+    /GoogleGenerativeAI|generativelanguage\.googleapis|GEMINI_API_KEY|\bgemini-[\w.-]+/i.test(
+      raw
+    ) ||
+    /generateContent|embedContent|TaskType\.RETRIEVAL_DOCUMENT/i.test(raw)
+  );
+}
+
 /** Expired, revoked, or malformed API key (retries will not help). */
 export function isGeminiApiKeyError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -572,8 +587,8 @@ ${english}`;
 }
 
 /**
- * Spoken Q&A for ElevenLabs voice agent (client tool → this via API).
- * Context must be the full GitLore narrative summary; answer is plain English for TTS.
+ * Spoken Q&A for voice (browser mic or ElevenLabs client tool → this via API).
+ * Replies in the same language as the question (English or Devanagari Hindi for TTS).
  */
 export async function voiceStoryAnswer(contextText: string, userQuestion: string): Promise<string> {
   const key = process.env.GEMINI_API_KEY?.trim();
@@ -591,14 +606,17 @@ The following text is the ONLY source of truth (from GitLore: blame, PRs, discus
 ${ctx}
 --- END CONTEXT ---
 
-The user asked (spoken): "${q.replace(/"/g, "'")}"
+The user asked (spoken, may be English or Hindi): "${q.replace(/"/g, "'")}"
 
-Reply in plain English suitable to be read aloud by a voice assistant:
-- Start directly with the answer; no "Sure!" preamble unless it is one short word.
+LANGUAGE — match the user's question:
+- If they wrote or spoke primarily in English (Latin script), reply in clear spoken English.
+- If they used Hindi (Devanagari) or clear Hinglish/Hindi intent, reply in **Devanagari Hindi** suitable for Indian text-to-speech (short sentences; keep repo paths, PR numbers, and file names in Latin when clearer).
+
+STYLE (any language):
+- Start directly with the answer; avoid long filler.
 - Use 2 to 6 short sentences unless they clearly ask for more detail.
-- If the context does not contain the answer, say that this summary does not include that information and suggest what you can answer from the story instead.
-- No markdown, bullet lists, or code fences. You may say short paths or PR numbers inline.
-- Be accurate, concrete, and easy to understand.
+- If the context does not contain the answer, say the summary does not include that and suggest what you can answer from the story instead.
+- No markdown, bullet lists, or code fences.
 
 Your reply:`;
 

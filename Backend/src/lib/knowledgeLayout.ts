@@ -5,6 +5,7 @@
 
 export type LayoutNodeKind =
   | "repository"
+  | "topic"
   | "pull_request"
   | "issue"
   | "contributor"
@@ -12,6 +13,7 @@ export type LayoutNodeKind =
 
 export type LayoutEdgeKind =
   | "repo_pr"
+  | "pr_topic"
   | "pr_issue"
   | "contrib_pr"
   | "pr_merge"
@@ -74,6 +76,15 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}\0${b}` : `${b}\0${a}`;
 }
 
+function topicSlug(t: string): string {
+  return String(t)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
 export function buildKnowledgeLayout(
   repoFull: string,
   owner: string,
@@ -107,13 +118,8 @@ export function buildKnowledgeLayout(
   const cols = Math.min(8, Math.max(3, Math.ceil(Math.sqrt(n * 1.35))));
   const cellW = prAreaWidth / cols;
   const cellH = 102;
-  const prStartY = 168;
   const prR = 24;
 
-  const rows = Math.ceil(n / cols);
-  const prBandBottom = prStartY + rows * cellH + 32;
-
-  const issueBandTop = prBandBottom + 40;
   const issueRowH = 56;
   const bottomPad = 72;
 
@@ -135,6 +141,61 @@ export function buildKnowledgeLayout(
     color: "#C9A84C",
     href: repoUrl,
   });
+
+  /** Themes from Gemini ingest (`topics` on each PR) — same signals the chat vector layer uses. */
+  const topicCounts = new Map<string, string>();
+  for (const pr of slice) {
+    const topics = (pr.topics as string[] | undefined) || [];
+    for (const raw of topics) {
+      const key = String(raw || "")
+        .trim()
+        .toLowerCase()
+        .slice(0, 48);
+      if (!key) continue;
+      if (!topicCounts.has(key)) topicCounts.set(key, String(raw).trim().slice(0, 48));
+    }
+  }
+  const rankedTopics = [...topicCounts.entries()]
+    .sort((a, b) => {
+      const ca = slice.filter((p) =>
+        ((p.topics as string[] | undefined) || []).some((t) => String(t).trim().toLowerCase() === a[0])
+      ).length;
+      const cb = slice.filter((p) =>
+        ((p.topics as string[] | undefined) || []).some((t) => String(t).trim().toLowerCase() === b[0])
+      ).length;
+      return cb - ca || a[0].localeCompare(b[0]);
+    })
+    .slice(0, 14);
+
+  const topicBandY = 124;
+  const topicNodeIds = new Map<string, string>();
+  if (rankedTopics.length) {
+    const tw = W - 160;
+    const step = tw / Math.max(rankedTopics.length, 1);
+    for (let ti = 0; ti < rankedTopics.length; ti++) {
+      const [normKey, displayLabel] = rankedTopics[ti];
+      const slug = topicSlug(normKey) || `t${ti}`;
+      const tid = `node-topic-${ti}-${slug}`;
+      topicNodeIds.set(normKey, tid);
+      const x = 80 + (ti + 0.5) * step;
+      nodes.push({
+        id: tid,
+        kind: "topic",
+        label: displayLabel.length > 22 ? `${displayLabel.slice(0, 20)}…` : displayLabel,
+        sublabel: "Theme from ingested PRs",
+        x: Math.min(W - 56, Math.max(56, x)),
+        y: topicBandY,
+        r: 14,
+        color: "#a855f7",
+        href: undefined,
+      });
+    }
+  }
+
+  const prStartY = rankedTopics.length ? 188 : 168;
+  const rows = Math.ceil(n / cols);
+  const prBandBottom = prStartY + rows * cellH + 32;
+  const issueBandTop = prBandBottom + 40;
 
   const prIds: string[] = [];
   for (let i = 0; i < n; i++) {
@@ -162,6 +223,12 @@ export function buildKnowledgeLayout(
       prType: ptype,
     });
     edges.push({ from: repoId, to: prId, kind: "repo_pr" });
+
+    const prTopics = ((pr.topics as string[] | undefined) || []).map((t) => String(t).trim().toLowerCase());
+    for (const tk of prTopics) {
+      const tid = topicNodeIds.get(tk);
+      if (tid) edges.push({ from: prId, to: tid, kind: "pr_topic" });
+    }
 
     const mc = pr.merge_commit as MergeCommit | undefined;
     if (mc?.url || mc?.oid) {

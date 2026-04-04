@@ -83,12 +83,26 @@ async function startServer() {
     await connectDB();
     console.log("✅ Database connected");
 
-    serve({
-      fetch: app.fetch,
-      port: port,
-    });
+    const server = serve(
+      {
+        fetch: app.fetch,
+        port: port,
+      },
+      () => {
+        console.log(`✅ GitLore backend running on http://localhost:${port}`);
+      }
+    );
 
-    console.log(`✅ GitLore backend running on http://localhost:${port}`);
+    server.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(`\n❌ Port ${port} is already in use (EADDRINUSE).`);
+        console.error("   Stop the other Node process or set PORT in GitLore/Backend/.env.");
+        console.error(`   Windows: netstat -ano | findstr :${port}  then  taskkill /PID <pid> /F\n`);
+      } else {
+        console.error("❌ Server listen error:", err);
+      }
+      process.exit(1);
+    });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
     process.exit(1);

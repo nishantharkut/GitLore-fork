@@ -55,6 +55,7 @@ interface TimelineDot { color: string; label: string; sublabel: string; date: st
 
 type PanelContent =
   | { type: "idle" }
+  | { type: "session-pending" }
   | { type: "need-auth" }
   | { type: "error"; message: string }
   | { type: "explanation"; data: InsightExplanation }
@@ -796,6 +797,19 @@ const AppView = () => {
     setStoryVoiceSnapshot(null);
   }, [panel.type]);
 
+  /** After OAuth, the panel could still be `need-auth` from an earlier click — clear it when session is valid. */
+  useEffect(() => {
+    if (user && panel.type === "need-auth") {
+      setPanel({ type: "idle" });
+    }
+  }, [user, panel.type]);
+
+  /** Resolve “session-pending” once /auth/me finishes (avoids false “sign in” while auth is still loading). */
+  useEffect(() => {
+    if (authLoading || panel.type !== "session-pending") return;
+    setPanel(user ? { type: "idle" } : { type: "need-auth" });
+  }, [authLoading, user, panel.type]);
+
   useEffect(() => {
     setExplanationCommentId(null);
   }, [selectedPrNumber]);
@@ -1024,6 +1038,11 @@ const AppView = () => {
 
   const handleCommentClick = useCallback(
     async (comment: ReviewComment) => {
+      if (authLoading) {
+        setPanelOpen(true);
+        setPanel({ type: "session-pending" });
+        return;
+      }
       if (!user) {
         setPanel({ type: "need-auth" });
         setPanelOpen(true);
@@ -1054,7 +1073,7 @@ const AppView = () => {
         setInsightLoading(false);
       }
     },
-    [user, repoFull, selectedPrNumber, target.filePath, diffLines]
+    [authLoading, user, repoFull, selectedPrNumber, target.filePath, diffLines]
   );
 
   const handleLineClickAnime = useCallback(
@@ -1067,6 +1086,11 @@ const AppView = () => {
         });
       }
       setSelectedLine(lineNum);
+      if (authLoading) {
+        setPanelOpen(true);
+        setPanel({ type: "session-pending" });
+        return;
+      }
       if (!user) {
         setPanel({ type: "need-auth" });
         setPanelOpen(true);
@@ -1089,7 +1113,7 @@ const AppView = () => {
         setInsightLoading(false);
       }
     },
-    [user, repoFull, target.filePath, target.branch]
+    [authLoading, user, repoFull, target.filePath, target.branch]
   );
 
   const handleDiffLineClick = useCallback((lineNum: number, el: HTMLElement) => {
@@ -1108,6 +1132,10 @@ const AppView = () => {
       <div className="flex h-full items-center justify-center p-8">
         <p className="text-center font-body text-sm text-gitlore-text-secondary">Loading insight…</p>
       </div>
+    ) : panel.type === "session-pending" ? (
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-center font-body text-sm text-gitlore-text-secondary">Verifying your session…</p>
+      </div>
     ) : panel.type === "need-auth" ? (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
         <p className="text-center font-body text-sm leading-relaxed text-gitlore-text-secondary">
@@ -1117,6 +1145,7 @@ const AppView = () => {
           type="button"
           onClick={() => startGithubOAuth()}
           className="rounded-sm bg-gitlore-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gitlore-accent-hover"
+          title="If OAuth fails, try Incognito with extensions disabled. Console errors mentioning content.js or runtime.lastError are often from a browser add-on, not GitLore."
         >
           Sign in with GitHub
         </button>
@@ -1128,25 +1157,31 @@ const AppView = () => {
     ) : panel.type === "explanation" ? (
       <ExplanationPanel explanation={panel.data} />
     ) : panel.type === "narrative" ? (
-      <NarrativePanel
-        narrative={panel.data}
-        line={panel.line}
-        onListenClick={() => {
-          setStoryVoiceSnapshot({
-            narrative: panel.data,
-            line: panel.line,
-            filePath: target.filePath || "",
-          });
-          setStoryVoiceOpen(true);
-        }}
-      />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <NarrativePanel
+            narrative={panel.data}
+            line={panel.line}
+            onListenClick={() => {
+              setStoryVoiceSnapshot({
+                narrative: panel.data,
+                line: panel.line,
+                filePath: target.filePath || "",
+              });
+              setStoryVoiceOpen(true);
+            }}
+          />
+        </div>
+      </div>
     ) : (
-      <div className="flex h-full items-center justify-center p-8">
-        <p className="text-center font-body text-sm leading-relaxed text-gitlore-text-secondary">
-          {leftTab === "code"
-            ? "Click a line to analyze the configured file path with Git blame (see bar above)."
-            : "Click a review comment to get an AI explanation via the API."}
-        </p>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+          <p className="text-center font-body text-sm leading-relaxed text-gitlore-text-secondary">
+            {leftTab === "code"
+              ? "Click a line to analyze the configured file path with Git blame (see bar above)."
+              : "Click a review comment to get an AI explanation via the API."}
+          </p>
+        </div>
       </div>
     );
 
