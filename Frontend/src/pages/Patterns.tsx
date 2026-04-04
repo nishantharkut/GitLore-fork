@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { FadeIn } from "../components/effects/FadeIn";
 import { useAuth } from "@/context/AuthContext";
@@ -6,84 +6,65 @@ import { useRepo } from "@/context/RepoContext";
 import {
   fetchRepoOverview,
   fetchRepoPatternInsights,
+  fetchRepoPatternScan,
   type RepoOverviewResponse,
   type RepoPatternInsightsResponse,
+  type RepoPatternScanResponse,
 } from "@/lib/gitloreApi";
+import {
+  REFERENCE_PATTERNS,
+  type ReferenceCategory,
+  type ReferencePattern,
+  type ReferenceSeverity,
+} from "@/data/referencePatterns";
 
-/* ── Pattern data ── */
-interface ReferencePattern {
-  name: string;
-  langs: string[];
-  anti: string;
-  correct: string;
-}
+const CATEGORY_ORDER: Record<ReferenceCategory, number> = {
+  security: 0,
+  performance: 1,
+  reliability: 2,
+  maintainability: 3,
+};
 
-/** Static examples only — never shown as “detected in your repo”. */
-const REFERENCE_PATTERNS: ReferencePattern[] = [
-  {
-    name: "Memory Leak -- useEffect",
-    langs: ["JavaScript", "TypeScript"],
-    anti: `useEffect(() => {\n  fetch(url).then(r => r.json())\n    .then(setData);\n}, []);`,
-    correct: `useEffect(() => {\n  const ctrl = new AbortController();\n  fetch(url, { signal: ctrl.signal })\n    .then(r => r.json()).then(setData);\n  return () => ctrl.abort();\n}, []);`,
-  },
-  {
-    name: "N+1 Query",
-    langs: ["Python", "JavaScript"],
-    anti: `for user in users:\n  orders = db.query(\n    "SELECT * FROM orders WHERE uid=?", user.id)`,
-    correct: `orders = db.query(\n  "SELECT * FROM orders WHERE uid IN (?)",\n  [u.id for u in users])`,
-  },
-  {
-    name: "SQL Injection",
-    langs: ["Python", "Java"],
-    anti: `query = f"SELECT * FROM users\n  WHERE name = '{name}'"`,
-    correct: `cursor.execute(\n  "SELECT * FROM users WHERE name = %s",\n  (name,))`,
-  },
-  {
-    name: "XSS -- innerHTML",
-    langs: ["JavaScript", "TypeScript"],
-    anti: `el.innerHTML = userInput;`,
-    correct: `el.textContent = userInput;\n// or use DOMPurify.sanitize()`,
-  },
-  {
-    name: "Unhandled Promise Rejection",
-    langs: ["JavaScript", "TypeScript"],
-    anti: `fetch('/api/data')\n  .then(r => r.json())\n  .then(setData);`,
-    correct: `fetch('/api/data')\n  .then(r => r.json())\n  .then(setData)\n  .catch(err => setError(err));`,
-  },
-  {
-    name: "Race Condition -- setState",
-    langs: ["JavaScript", "TypeScript"],
-    anti: `setCount(count + 1);\nsetCount(count + 1);\n// only increments once`,
-    correct: `setCount(c => c + 1);\nsetCount(c => c + 1);\n// increments twice`,
-  },
-  {
-    name: "Hardcoded Secrets",
-    langs: ["Python", "JavaScript"],
-    anti: `API_KEY = "sk-abc123def456"\nheaders = {"Auth": API_KEY}`,
-    correct: `API_KEY = os.environ["API_KEY"]\nheaders = {"Auth": API_KEY}`,
-  },
-  {
-    name: "Missing Error Boundary",
-    langs: ["TypeScript", "JavaScript"],
-    anti: `<App>\n  <UserProfile />\n  <Dashboard />\n</App>`,
-    correct: `<App>\n  <ErrorBoundary>\n    <UserProfile />\n  </ErrorBoundary>\n</App>`,
-  },
-  {
-    name: "Stale Closure",
-    langs: ["JavaScript", "TypeScript"],
-    anti: `useEffect(() => {\n  const id = setInterval(() => {\n    console.log(count); // stale\n  }, 1000);\n}, []);`,
-    correct: `useEffect(() => {\n  const id = setInterval(() => {\n    setCount(c => c + 1);\n  }, 1000);\n  return () => clearInterval(id);\n}, []);`,
-  },
-  {
-    name: "God Component",
-    langs: ["TypeScript", "JavaScript"],
-    anti: `// 500+ line component\nconst Dashboard = () => {\n  // auth, data, UI, state...\n}`,
-    correct: `// Split into focused modules\n<AuthGate />\n<DataProvider>\n  <DashboardUI />\n</DataProvider>`,
-  },
+const SEVERITY_ORDER: Record<ReferenceSeverity, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+const CATEGORY_LABELS: ReferenceCategory[] = [
+  "security",
+  "performance",
+  "reliability",
+  "maintainability",
 ];
+
+/** Collapsed churn list: fixed visual height + preview rows; expand for full scrollable list. */
+const CHURN_PREVIEW_COUNT = 3;
+const CHURN_COLLAPSED_HEIGHT_CLASS = "h-52";
 
 function dotClass(i: number) {
   return i % 3 === 0 ? "bg-gitlore-error" : i % 3 === 1 ? "bg-gitlore-warning" : "bg-gitlore-success";
+}
+
+function severityDotClass(s: ReferenceSeverity) {
+  if (s === "critical") return "bg-red-500";
+  if (s === "high") return "bg-orange-500";
+  if (s === "medium") return "bg-amber-500";
+  return "bg-gray-400";
+}
+
+function severityBadgeClass(s: ReferenceSeverity) {
+  if (s === "critical") return "border-red-500/50 bg-red-500/10 text-red-400";
+  if (s === "high") return "border-orange-500/50 bg-orange-500/10 text-orange-400";
+  if (s === "medium") return "border-amber-500/50 bg-amber-500/10 text-amber-400";
+  return "border-gitlore-border bg-gitlore-border/30 text-gitlore-text-secondary";
+}
+
+function matchesRepoLang(p: ReferencePattern, primary: string | null): boolean {
+  if (!primary) return false;
+  const pl = primary.toLowerCase();
+  return p.langs.some((l) => l.toLowerCase() === pl);
 }
 
 const Patterns = () => {
@@ -95,13 +76,32 @@ const Patterns = () => {
   const [lineSearch, setLineSearch] = useState("");
   const [overview, setOverview] = useState<RepoOverviewResponse | null>(null);
   const [insights, setInsights] = useState<RepoPatternInsightsResponse | null>(null);
+  const [scan, setScan] = useState<RepoPatternScanResponse | null>(null);
   const [pageLoading, setPageLoading] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [activeCategories, setActiveCategories] = useState<Set<ReferenceCategory>>(new Set());
+  const [langOnly, setLangOnly] = useState(false);
+  const [churnExpanded, setChurnExpanded] = useState(false);
+
+  const toggleCategory = (c: ReferenceCategory) => {
+    setActiveCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      return next;
+    });
+  };
+
+  const clearCategories = () => setActiveCategories(new Set());
 
   useEffect(() => {
     if (!user || !repoReady) {
       setOverview(null);
       setInsights(null);
+      setScan(null);
       setPageLoading(false);
+      setScanError(null);
       return;
     }
     let cancelled = false;
@@ -130,10 +130,53 @@ const Patterns = () => {
     };
   }, [user, repoReady, target.owner, target.name, target.branch]);
 
+  useEffect(() => {
+    setChurnExpanded(false);
+  }, [repoFull]);
+
+  const loadScan = useCallback(
+    async (refresh: boolean) => {
+      if (!user || !repoReady) return;
+      setScanLoading(true);
+      setScanError(null);
+      try {
+        const data = await fetchRepoPatternScan(target.owner, target.name, {
+          branch: target.branch,
+          refresh,
+        });
+        setScan(data);
+      } catch (e) {
+        setScan(null);
+        setScanError(e instanceof Error ? e.message : "Scan failed");
+      } finally {
+        setScanLoading(false);
+      }
+    },
+    [user, repoReady, target.owner, target.name, target.branch]
+  );
+
+  useEffect(() => {
+    if (!user || !repoReady) {
+      setScan(null);
+      setScanError(null);
+      return;
+    }
+    void loadScan(false);
+  }, [user, repoReady, target.owner, target.name, target.branch, loadScan]);
+
   const repoPrimaryLang = overview?.language ?? null;
   const kg = insights?.knowledgeGraph;
   const ex = insights?.explain;
   const line = insights?.lineAnalyze;
+  const churn = insights?.churnHotspots ?? [];
+  const oscillations = insights?.decisionOscillations ?? [];
+  const timeline = insights?.decisionTimeline ?? [];
+
+  const detectedScanIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const row of scan?.patterns ?? []) s.add(row.patternId);
+    return s;
+  }, [scan]);
 
   const q = (s: string) => s.toLowerCase();
   const filteredKgTypes =
@@ -148,9 +191,29 @@ const Patterns = () => {
   const conf = line?.byConfidence;
   const confTotal = conf ? Math.max(1, conf.high + conf.medium + conf.low) : 1;
 
-  const filteredRef = REFERENCE_PATTERNS.filter((p) =>
-    p.name.toLowerCase().includes(refSearch.toLowerCase())
-  );
+  const filteredSortedRef = useMemo(() => {
+    const needle = refSearch.toLowerCase().trim();
+    let list = REFERENCE_PATTERNS.filter((p) => {
+      if (needle && !p.name.toLowerCase().includes(needle)) return false;
+      if (activeCategories.size > 0 && !activeCategories.has(p.category)) return false;
+      if (langOnly && !matchesRepoLang(p, repoPrimaryLang)) return false;
+      return true;
+    });
+    list = [...list].sort((a, b) => {
+      const ma = matchesRepoLang(a, repoPrimaryLang) ? 0 : 1;
+      const mb = matchesRepoLang(b, repoPrimaryLang) ? 0 : 1;
+      if (ma !== mb) return ma - mb;
+      const ca = CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category];
+      if (ca !== 0) return ca;
+      const sa = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
+      if (sa !== 0) return sa;
+      return a.name.localeCompare(b.name);
+    });
+    return list;
+  }, [refSearch, activeCategories, langOnly, repoPrimaryLang]);
+
+  const cardDetected = (p: ReferencePattern) =>
+    (p.scanIds ?? []).some((id) => detectedScanIds.has(id));
 
   if (user && !repoReady) {
     return (
@@ -158,16 +221,15 @@ const Patterns = () => {
         <div className="mx-auto max-w-[1200px] text-center md:px-8 md:py-12">
           <h1 className="mb-2 font-heading text-2xl font-bold text-gitlore-text">Patterns & themes</h1>
           <p className="text-sm text-gitlore-text-secondary">
-
-            Select a repository from the header to see knowledge-graph themes, explain labels, and line-analysis
-            activity for that repo.
-
-            Select a repository on the{" "}
+            Select a repository from the header to see knowledge-graph themes, explain labels, line-analysis activity, code
+            scan results, and reference snippets for that repo.
+          </p>
+          <p className="mt-3 text-sm text-gitlore-text-secondary">
+            Use the{" "}
             <Link to="/repos" className="text-gitlore-accent hover:text-gitlore-accent-hover">
               repo picker
             </Link>{" "}
-            or via the <span className="text-gitlore-text">Repositories</span> search in the header.
-
+            or the <span className="text-gitlore-text">Repositories</span> search in the header.
           </p>
         </div>
       </div>
@@ -191,18 +253,17 @@ const Patterns = () => {
         <div className="mb-6 mt-4 rounded-sm border border-gitlore-border/80 bg-gitlore-surface/60 px-4 py-3 text-xs leading-relaxed text-gitlore-text-secondary">
           <p className="font-medium text-gitlore-text/90">What you are looking at</p>
           <p className="mt-1.5">
-          Three <span className="text-gitlore-text/90">repo-specific</span> signals below: (1) merged-PR knowledge
-          graph (types & topics from ingest), (2) labels from cached <span className="font-code text-[11px]">Explain</span>{" "}
-          on PR comments, (3) cached <span className="font-code text-[11px]">Analyze line</span> narratives (files +
-          confidence). At the bottom: <span className="text-gitlore-text/90">ten</span> curated reference snippets
-          (memory leak, N+1, XSS, …) — not from your repo.
+            <span className="text-gitlore-text/90">Repo-specific</span> data comes from Mongo (ingested PRs, cached Explain
+            labels, Analyze-line narratives) plus a lightweight <span className="text-gitlore-text/90">code scan</span> of up
+            to 50 text files on the branch you selected in the header. Churn hotspots and decision timelines are derived
+            from knowledge-graph nodes. At the bottom, <span className="text-gitlore-text/90">reference cards</span> are
+            curated examples — they light up with a gold border when the scan finds a matching rule id in your tree.
           </p>
         </div>
 
         {!user && (
           <p className="mb-6 text-xs text-gitlore-text-secondary">Sign in to load repository data.</p>
         )}
-
 
         {user && (
           <>
@@ -259,7 +320,8 @@ const Patterns = () => {
                     From knowledge graph (ingested PRs)
                   </div>
                   <p className="mt-1 max-w-2xl text-xs text-gitlore-text-secondary/90">
-                    Decision types and extracted topics across indexed PRs. Run <span className="text-gitlore-text">Build Knowledge Graph</span> on Overview if this is empty.
+                    Decision types and extracted topics across indexed PRs. Run{" "}
+                    <span className="text-gitlore-text">Build Knowledge Graph</span> on Overview if this is empty.
                   </p>
                 </div>
                 {pageLoading && <span className="text-xs text-gitlore-text-secondary">Loading…</span>}
@@ -274,8 +336,12 @@ const Patterns = () => {
               <FadeIn direction="up">
                 {!pageLoading && kg && kg.prNodeCount === 0 && (
                   <p className="mb-4 text-sm text-gitlore-text-secondary">
-                    No graph nodes yet. Open <Link to="/overview" className="text-gitlore-accent underline-offset-2 hover:underline">Overview</Link> and run{" "}
-                    <span className="text-gitlore-text">Build Knowledge Graph</span> to populate themes from merged PRs.
+                    No graph nodes yet. Open{" "}
+                    <Link to="/overview" className="text-gitlore-accent underline-offset-2 hover:underline">
+                      Overview
+                    </Link>{" "}
+                    and run <span className="text-gitlore-text">Build Knowledge Graph</span> to populate themes from merged
+                    PRs.
                   </p>
                 )}
                 <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -322,6 +388,219 @@ const Patterns = () => {
               </FadeIn>
             </div>
 
+            {/* Churn + timeline + oscillations */}
+            <div className="mb-10 grid grid-cols-1 gap-8 lg:grid-cols-2">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">
+                  Churn hotspots (files in many PRs)
+                </div>
+                <p className="mt-1 max-w-xl text-xs text-gitlore-text-secondary/90">
+                  Paths that appear in <span className="text-gitlore-text">changed_files</span> on multiple ingested PRs —
+                  good candidates for refactors or ownership discussion.
+                </p>
+                <FadeIn direction="up">
+                  {!pageLoading && churn.length === 0 && (
+                    <p className="mt-3 text-sm text-gitlore-text-secondary">
+                      No hotspots yet (need at least two PRs touching the same file in the graph).
+                    </p>
+                  )}
+                  {churn.length > 0 && (
+                    <>
+                      <div
+                        className={`mt-3 rounded-sm border border-gitlore-border/60 bg-gitlore-surface/40 p-2 ${
+                          churnExpanded ? "max-h-72 overflow-y-auto" : `${CHURN_COLLAPSED_HEIGHT_CLASS} overflow-y-auto overflow-x-hidden`
+                        }`}
+                      >
+                        <ul className="space-y-2">
+                          {(churnExpanded ? churn : churn.slice(0, CHURN_PREVIEW_COUNT)).map((h) => (
+                            <li
+                              key={h.file}
+                              className="rounded-sm border border-gitlore-border bg-gitlore-surface px-3 py-2 text-xs text-gitlore-text"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Link
+                                  to="/app"
+                                  state={{ file: h.file }}
+                                  className="min-w-0 truncate font-code text-gitlore-accent hover:underline"
+                                  title={h.file}
+                                >
+                                  {h.file}
+                                </Link>
+                                <span className="shrink-0 text-gitlore-text-secondary">
+                                  {h.prCount} PRs · {h.types.join(", ") || "—"}
+                                </span>
+                              </div>
+                              <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-gitlore-text-secondary">
+                                {h.prs.slice(0, 6).map((p) => (
+                                  <span key={`${h.file}-${p.number}`} className="rounded-sm bg-gitlore-code px-1.5 py-0.5">
+                                    #{p.number} {p.type}
+                                  </span>
+                                ))}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      {churn.length > CHURN_PREVIEW_COUNT && (
+                        <button
+                          type="button"
+                          onClick={() => setChurnExpanded((v) => !v)}
+                          className="mt-2 text-xs font-medium text-gitlore-accent hover:text-gitlore-accent-hover hover:underline"
+                        >
+                          {churnExpanded
+                            ? "Show less"
+                            : `Show more (${churn.length - CHURN_PREVIEW_COUNT} more)`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </FadeIn>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">
+                  Decision timeline (by month)
+                </div>
+                <p className="mt-1 max-w-xl text-xs text-gitlore-text-secondary/90">
+                  Count of knowledge nodes with a <span className="text-gitlore-text">merged_at</span> in each month.
+                </p>
+                <FadeIn direction="up">
+                  {!pageLoading && timeline.length === 0 && (
+                    <p className="mt-3 text-sm text-gitlore-text-secondary">No dated nodes in the graph yet.</p>
+                  )}
+                  <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+                    {timeline.map((t) => (
+                      <li
+                        key={t.month}
+                        className="flex items-center justify-between gap-2 rounded-sm border border-gitlore-border/80 bg-gitlore-surface px-3 py-2 font-code text-[11px] text-gitlore-text"
+                      >
+                        <span>{t.month}</span>
+                        <span className="text-gitlore-accent">{t.count}</span>
+                        <span className="max-w-[180px] truncate text-gitlore-text-secondary" title={JSON.stringify(t.types)}>
+                          {Object.entries(t.types)
+                            .map(([k, v]) => `${k}:${v}`)
+                            .join(" · ")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </FadeIn>
+              </div>
+            </div>
+
+            {oscillations.length > 0 && (
+              <div className="mb-10">
+                <div className="text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">
+                  Possible decision shifts (heuristic)
+                </div>
+                <p className="mt-1 max-w-2xl text-xs text-gitlore-text-secondary/90">
+                  Later PR decisions that share terms with earlier listed alternatives — not proof of reversal, but a cue
+                  to read both threads.
+                </p>
+                <FadeIn direction="up">
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {oscillations.map((o, idx) => (
+                      <div
+                        key={`${o.earlier.pr_number}-${o.later.pr_number}-${idx}`}
+                        className="rounded-sm border border-gitlore-border bg-gitlore-surface p-4 text-xs"
+                      >
+                        <div className="mb-2 font-code text-[10px] text-gitlore-text-secondary">
+                          PR #{o.earlier.pr_number} → #{o.later.pr_number}
+                        </div>
+                        <p className="mb-1 line-clamp-2 text-gitlore-text-secondary">{o.earlier.title}</p>
+                        <p className="mb-2 line-clamp-2 text-gitlore-text-secondary">{o.later.title}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {o.sharedTerms.map((w) => (
+                            <span key={w} className="rounded-sm bg-gitlore-code px-1.5 py-0.5 font-code text-[10px]">
+                              {w}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </FadeIn>
+              </div>
+            )}
+
+            {/* Code scan */}
+            <div className="mb-10">
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-wider text-gitlore-text-secondary">
+                    Code scan (regex, sampled files)
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs text-gitlore-text-secondary/90">
+                    Server scans up to 50 small text files (skips <span className="font-code text-[11px]">node_modules</span>
+                    , locks, etc.). Results cache for about an hour per repo and branch query.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={scanLoading}
+                  onClick={() => void loadScan(true)}
+                  className="rounded-sm border border-gitlore-accent/50 bg-gitlore-accent/10 px-3 py-1.5 text-xs font-medium text-gitlore-accent transition-colors hover:bg-gitlore-accent/20 disabled:opacity-50"
+                >
+                  {scanLoading ? "Scanning…" : "Re-scan"}
+                </button>
+              </div>
+              {scanError && (
+                <p className="mb-3 text-sm text-gitlore-error">
+                  {scanError}{" "}
+                  <button type="button" className="underline" onClick={() => void loadScan(false)}>
+                    Retry
+                  </button>
+                </p>
+              )}
+              <FadeIn direction="up">
+                {scan && !scanLoading && (
+                  <p className="mb-3 font-code text-[11px] text-gitlore-text-secondary">
+                    Branch <span className="text-gitlore-text">{scan.branch || "—"}</span> · {scan.fileCount} files touched ·{" "}
+                    {scan.cached ? "served from cache" : "fresh scan"} · {new Date(scan.scannedAt).toLocaleString()}
+                  </p>
+                )}
+                {!scanLoading && scan && scan.patterns.length === 0 && (
+                  <p className="text-sm text-gitlore-text-secondary">
+                    No rule hits in the sampled files. Reference cards below are still useful for review; run Re-scan after
+                    pushing changes.
+                  </p>
+                )}
+                <div className="space-y-4">
+                  {(scan?.patterns ?? []).map((row) => (
+                    <div
+                      key={row.patternId}
+                      className="rounded-sm border border-gitlore-border bg-gitlore-surface p-4"
+                    >
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${severityDotClass(row.severity)}`} />
+                        <span className="text-sm font-medium text-gitlore-text">{row.name}</span>
+                        <span className="rounded-sm border border-gitlore-border/60 px-2 py-0.5 font-code text-[10px] uppercase text-gitlore-text-secondary">
+                          {row.category}
+                        </span>
+                        <span className="font-code text-xs text-gitlore-accent">×{row.matchCount}</span>
+                      </div>
+                      <ul className="space-y-1 font-code text-[11px] text-gitlore-text-secondary">
+                        {row.matches.slice(0, 12).map((m, i) => (
+                          <li key={`${m.file}-${m.line}-${i}`} className="flex flex-wrap gap-2">
+                            <Link
+                              to="/app"
+                              state={{ file: m.file, analyzeLine: m.line }}
+                              className="text-gitlore-accent hover:underline"
+                            >
+                              {m.file}:{m.line}
+                            </Link>
+                            <span className="min-w-0 truncate text-gitlore-text-secondary/90" title={m.snippet}>
+                              {m.snippet}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </FadeIn>
+            </div>
+
             {/* Explain */}
             <div className="mb-10">
               <div className="mb-2">
@@ -329,7 +608,8 @@ const Patterns = () => {
                   From PR review explanations
                 </div>
                 <p className="mt-1 max-w-2xl text-xs text-gitlore-text-secondary/90">
-                  Pattern names from Gemini (or regex slugs) stored when you run <span className="text-gitlore-text">Explain</span> on review comments in Live repo.
+                  Pattern names from Gemini (or regex slugs) stored when you run <span className="text-gitlore-text">Explain</span>{" "}
+                  on review comments in Live repo.
                 </p>
               </div>
               <input
@@ -382,7 +662,8 @@ const Patterns = () => {
                   From line analysis
                 </div>
                 <p className="mt-1 max-w-2xl text-xs text-gitlore-text-secondary/90">
-                  Where you have used <span className="text-gitlore-text">Analyze</span> on a line in Live repo, we show confidence mix and the files you investigated most.
+                  Where you have used <span className="text-gitlore-text">Analyze</span> on a line in Live repo, we show
+                  confidence mix and the files you investigated most.
                 </p>
               </div>
               {!pageLoading && line && line.cachedCount > 0 && conf && (
@@ -457,9 +738,50 @@ const Patterns = () => {
         <div className="mb-10 border-t border-gitlore-border/70 pt-10">
           <h2 className="mb-1 font-heading text-lg font-semibold text-gitlore-text">Reference examples</h2>
           <p className="mb-4 max-w-2xl text-xs text-gitlore-text-secondary">
-            Curated anti-pattern vs better-pattern snippets (memory leaks, N+1, XSS, SQLi, etc.). These are not scanned
-            from your repository — use them while reviewing or learning.
+            Curated anti-pattern vs better-pattern snippets. Cards with a gold border had at least one matching hit in the
+            last code scan (rule ids line up with the scanner). Everything here is educational — always confirm in context.
           </p>
+
+          <div className="mb-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={clearCategories}
+              className={`rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
+                activeCategories.size === 0
+                  ? "border-gitlore-accent/60 bg-gitlore-accent/15 text-gitlore-accent"
+                  : "border-gitlore-border text-gitlore-text-secondary hover:border-gitlore-accent/40"
+              }`}
+            >
+              All categories
+            </button>
+            {CATEGORY_LABELS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => toggleCategory(c)}
+                className={`rounded-full border px-3 py-1 text-[11px] font-medium capitalize transition-colors ${
+                  activeCategories.has(c)
+                    ? "border-gitlore-accent/60 bg-gitlore-accent/15 text-gitlore-accent"
+                    : "border-gitlore-border text-gitlore-text-secondary hover:border-gitlore-accent/40"
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+
+          {repoPrimaryLang && (
+            <label className="mb-4 flex cursor-pointer items-center gap-2 text-xs text-gitlore-text-secondary">
+              <input
+                type="checkbox"
+                checked={langOnly}
+                onChange={(e) => setLangOnly(e.target.checked)}
+                className="rounded border-gitlore-border"
+              />
+              Show only patterns tagged with <span className="font-code text-gitlore-text">{repoPrimaryLang}</span>
+            </label>
+          )}
+
           <input
             type="text"
             placeholder="Filter by name (e.g. memory, SQL)…"
@@ -469,42 +791,71 @@ const Patterns = () => {
           />
           <FadeIn direction="up">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredRef.map((p) => (
-                <div
-                  key={p.name}
-                  className="pattern-card flex flex-col rounded-sm border border-gitlore-border bg-gitlore-surface p-4"
-                >
-                  <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-gitlore-text-secondary">
-                    Reference
-                  </div>
-                  <div className="mb-2 font-heading text-sm font-semibold leading-snug text-gitlore-accent">{p.name}</div>
-                  <div className="mb-3 flex flex-wrap gap-1.5">
-                    {p.langs.map((l) => (
-                      <span
-                        key={l}
-                        className="rounded-sm bg-gitlore-border/40 px-2 py-0.5 font-code text-[10px] text-gitlore-text-secondary"
-                      >
-                        {l}
+              {filteredSortedRef.map((p) => {
+                const detected = cardDetected(p);
+                const relevant = matchesRepoLang(p, repoPrimaryLang);
+                return (
+                  <div
+                    key={p.id}
+                    className={`pattern-card flex flex-col rounded-sm border bg-gitlore-surface p-4 ${
+                      detected ? "border-amber-400/90 ring-1 ring-amber-400/50" : "border-gitlore-border"
+                    }`}
+                  >
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-gitlore-text-secondary">
+                        Reference
                       </span>
-                    ))}
+                      {detected && (
+                        <span className="rounded-sm bg-amber-500/20 px-2 py-0.5 font-code text-[9px] font-medium uppercase text-amber-200">
+                          Detected in repo
+                        </span>
+                      )}
+                      {relevant && repoPrimaryLang && (
+                        <span className="rounded-sm border border-gitlore-accent/30 bg-gitlore-accent/10 px-2 py-0.5 text-[9px] text-gitlore-accent">
+                          Relevant to this repo
+                        </span>
+                      )}
+                    </div>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${severityDotClass(p.severity)}`} />
+                      <span
+                        className={`rounded-sm border px-2 py-0.5 font-code text-[9px] font-semibold uppercase ${severityBadgeClass(p.severity)}`}
+                      >
+                        {p.severity}
+                      </span>
+                      <span className="rounded-sm border border-gitlore-border/60 px-2 py-0.5 font-code text-[9px] uppercase text-gitlore-text-secondary">
+                        {p.category}
+                      </span>
+                    </div>
+                    <div className="mb-2 font-heading text-sm font-semibold leading-snug text-gitlore-accent">{p.name}</div>
+                    <div className="mb-3 flex flex-wrap gap-1.5">
+                      {p.langs.map((l) => (
+                        <span
+                          key={l}
+                          className="rounded-sm bg-gitlore-border/40 px-2 py-0.5 font-code text-[10px] text-gitlore-text-secondary"
+                        >
+                          {l}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-gitlore-error/50">
+                      Anti-pattern
+                    </div>
+                    <pre className="mb-3 overflow-x-auto whitespace-pre rounded-sm border border-gitlore-border bg-gitlore-code p-2 font-code text-sm leading-5 text-gitlore-text md:text-[11px] md:leading-4">
+                      {p.anti}
+                    </pre>
+                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-gitlore-success/50">
+                      Better pattern
+                    </div>
+                    <pre className="mb-3 overflow-x-auto whitespace-pre rounded-sm border border-gitlore-border bg-gitlore-code p-2 font-code text-sm leading-5 text-gitlore-text md:text-[11px] md:leading-4">
+                      {p.correct}
+                    </pre>
+                    <div className="mt-auto border-t border-gitlore-border/60 pt-3 text-[10px] leading-snug text-gitlore-text-secondary">
+                      Not a substitute for review — cross-check with the Live repo and your team&apos;s standards.
+                    </div>
                   </div>
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-gitlore-error/50">
-                    Anti-pattern
-                  </div>
-                  <pre className="mb-3 overflow-x-auto whitespace-pre rounded-sm border border-gitlore-border bg-gitlore-code p-2 font-code text-sm leading-5 text-gitlore-text md:text-[11px] md:leading-4">
-                    {p.anti}
-                  </pre>
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-gitlore-success/50">
-                    Better pattern
-                  </div>
-                  <pre className="mb-3 overflow-x-auto whitespace-pre rounded-sm border border-gitlore-border bg-gitlore-code p-2 font-code text-sm leading-5 text-gitlore-text md:text-[11px] md:leading-4">
-                    {p.correct}
-                  </pre>
-                  <div className="mt-auto border-t border-gitlore-border/60 pt-3 text-[10px] leading-snug text-gitlore-text-secondary">
-                    Not derived from your repository — for learning only.
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </FadeIn>
         </div>

@@ -5,6 +5,7 @@ import { ChatPanel } from "../components/ChatPanel";
 import { EnforcementLog } from "../components/EnforcementLog";
 import { IngestButton } from "../components/IngestButton";
 import { KnowledgeDecisionsGraph } from "../components/KnowledgeDecisionsGraph";
+import { invalidateKnowledgeSuggestionsCache } from "../components/KnowledgeSuggestions";
 import { OverviewSkeleton, Spinner } from "../components/Skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useRepo } from "@/context/RepoContext";
@@ -448,6 +449,7 @@ const Overview = () => {
             <KnowledgeDecisionsGraph refreshKey={refreshChat} />
             <IngestButton
               onComplete={() => {
+                invalidateKnowledgeSuggestionsCache();
                 setRefreshChat((p) => p + 1);
               }}
             />

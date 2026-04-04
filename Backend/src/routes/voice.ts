@@ -2,7 +2,12 @@ import { Buffer } from "node:buffer";
 import { Hono } from "hono";
 import { z } from "zod";
 import { getCurrentUser } from "../middleware/auth";
-import { translateEnglishToHindiForSpeech, voiceStoryAnswer } from "../lib/gemini";
+import {
+  GEMINI_CLIENT_FRIENDLY_MESSAGE,
+  isLikelyGeminiRelatedError,
+  translateEnglishToHindiForSpeech,
+  voiceStoryAnswer,
+} from "../lib/gemini";
 
 export const voiceRouter = new Hono();
 
@@ -64,6 +69,8 @@ voiceRouter.get("/voice/status", async (c) => {
     ttsHindiReady: apiKey && voiceIdHi && gemini,
     agentReady: apiKey && agentId,
     voiceChatGeminiReady: apiKey && agentId && gemini,
+    /** Browser mic Q&A: Gemini + TTS only (no ElevenLabs agent / client tools required) */
+    browserVoiceQaReady: apiKey && voiceId && gemini,
     elevenlabsServerLocation: serverLocation,
     /** Model hint for docs only */
     ttsModel: process.env.ELEVENLABS_TTS_MODEL?.trim() || "eleven_turbo_v2_5",
@@ -109,20 +116,21 @@ voiceRouter.post("/voice/gemini-voice-reply", async (c) => {
       return c.json({ error: "Invalid body", details: e.errors }, 400);
     }
     console.error("voice gemini-voice-reply:", e);
-    const msg = e instanceof Error ? e.message : String(e);
-    return c.json(
-      {
-        error: "Could not generate answer",
-        message: process.env.NODE_ENV === "development" ? msg.slice(0, 300) : undefined,
-      },
-      502
-    );
+    const raw = e instanceof Error ? e.message : String(e);
+    const message = isLikelyGeminiRelatedError(raw)
+      ? GEMINI_CLIENT_FRIENDLY_MESSAGE
+      : process.env.NODE_ENV === "development"
+        ? raw.slice(0, 300)
+        : GEMINI_CLIENT_FRIENDLY_MESSAGE;
+    return c.json({ error: "Could not generate answer", message }, 502);
   }
 });
 
 const ttsBodySchema = z.object({
   text: z.string().min(1).max(5000),
   locale: z.enum(["en", "hi"]).optional().default("en"),
+  /** When locale is hi and text is already Devanagari (e.g. Gemini voice reply), skip EN→HI translation */
+  skip_translate: z.boolean().optional().default(false),
 });
 
 /**
@@ -145,7 +153,7 @@ voiceRouter.post("/voice/tts", async (c) => {
     }
 
     const body = await c.req.json();
-    const { text, locale } = ttsBodySchema.parse(body);
+    const { text, locale, skip_translate: skipTranslate } = ttsBodySchema.parse(body);
 
     let voiceId = voiceIdEn;
     let textForTts = text;
@@ -162,7 +170,10 @@ voiceRouter.post("/voice/tts", async (c) => {
       }
       voiceId = voiceIdHi;
       try {
-        textForTts = await translateEnglishToHindiForSpeech(text);
+        textForTts =
+          skipTranslate || /[\u0900-\u097F]/.test(text)
+            ? text
+            : await translateEnglishToHindiForSpeech(text);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("voice tts hindi translate:", msg);

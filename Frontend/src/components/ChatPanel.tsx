@@ -1,10 +1,32 @@
-import { useState, useRef, useEffect, useCallback, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  Children,
+  isValidElement,
+  type ComponentPropsWithoutRef,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Send, Bot, User, ExternalLink, Loader, Sparkles, Trash2 } from "lucide-react";
+import { Send, Bot, User, ExternalLink, Loader, Sparkles, Trash2, Mic } from "lucide-react";
 import { useRepo } from "@/context/RepoContext";
 import { useToast } from "@/context/ToastContext";
-import { postJSON, fetchChatGraphStatus, type ChatGraphStatusResponse } from "@/lib/gitloreApi";
+import { useTheme } from "@/context/ThemeContext";
+import {
+  postJSON,
+  fetchChatGraphStatus,
+  fetchChatSuggestions,
+  type ChatGraphStatusResponse,
+} from "@/lib/gitloreApi";
+import { ChatMermaidBlock } from "@/components/ChatMermaidBlock";
+import {
+  browserSpeechRecognitionSupported,
+  recognizeSpeechOnce,
+} from "@/lib/browserSpeechRecognition";
 import {
   loadChatSessionCache,
   saveChatSessionCache,
@@ -42,66 +64,17 @@ const TYPE_COLORS: Record<string, string> = {
   other: "text-gray-500",
 };
 
-/** Markdown mapping for assistant replies — scoped to the chat bubble. */
-const assistantMarkdownComponents = {
-  h1: (props: ComponentPropsWithoutRef<"h1">) => (
-    <h1 className="mb-2 mt-3 text-base font-semibold text-gitlore-text first:mt-0" {...props} />
-  ),
-  h2: (props: ComponentPropsWithoutRef<"h2">) => (
-    <h2 className="mb-2 mt-3 text-[15px] font-semibold text-gitlore-text first:mt-0" {...props} />
-  ),
-  h3: (props: ComponentPropsWithoutRef<"h3">) => (
-    <h3 className="mb-1.5 mt-2 text-sm font-semibold text-gitlore-text first:mt-0" {...props} />
-  ),
-  p: (props: ComponentPropsWithoutRef<"p">) => <p className="mb-2 last:mb-0 leading-relaxed text-gitlore-text" {...props} />,
-  ul: (props: ComponentPropsWithoutRef<"ul">) => (
-    <ul className="mb-2 list-inside list-disc space-y-1 pl-0.5 text-gitlore-text marker:text-gitlore-text-secondary" {...props} />
-  ),
-  ol: (props: ComponentPropsWithoutRef<"ol">) => (
-    <ol className="mb-2 list-inside list-decimal space-y-1 pl-0.5 text-gitlore-text marker:text-gitlore-text-secondary" {...props} />
-  ),
-  li: (props: ComponentPropsWithoutRef<"li">) => <li className="leading-relaxed [&>p]:mb-0" {...props} />,
-  strong: (props: ComponentPropsWithoutRef<"strong">) => <strong className="font-semibold text-gitlore-text" {...props} />,
-  em: (props: ComponentPropsWithoutRef<"em">) => <em className="italic text-gitlore-text" {...props} />,
-  a: (props: ComponentPropsWithoutRef<"a">) => (
-    <a
-      className="text-gitlore-accent underline decoration-gitlore-accent/40 underline-offset-2 transition-colors hover:text-gitlore-accent-hover"
-      target="_blank"
-      rel="noopener noreferrer"
-      {...props}
-    />
-  ),
-  code: ({ className, children, ...props }: ComponentPropsWithoutRef<"code">) => {
-    const isBlock = /language-/.test(className || "");
-    if (isBlock) {
-      return (
-        <code className={className} {...props}>
-          {children}
-        </code>
-      );
-    }
-    return (
-      <code
-        className="rounded-sm bg-gitlore-code px-1.5 py-0.5 font-code text-[13px] text-gitlore-accent"
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  },
-  pre: ({ children }: { children?: ReactNode }) => (
-    <pre className="mb-2 max-w-full overflow-x-auto rounded-sm border border-gitlore-border bg-gitlore-code p-3 font-code text-[13px] leading-relaxed text-gitlore-text">
-      {children}
-    </pre>
-  ),
-  blockquote: (props: ComponentPropsWithoutRef<"blockquote">) => (
-    <blockquote className="mb-2 border-l-2 border-gitlore-border pl-3 text-gitlore-text-secondary italic" {...props} />
-  ),
-  hr: () => <hr className="my-3 border-gitlore-border" />,
-};
-
 function repoCacheKey(owner: string, name: string): string {
   return `${owner.trim().toLowerCase()}/${name.trim().toLowerCase()}`;
+}
+
+/** BCP 47 tag for Web Speech API; falls back when `navigator.language` is missing. */
+function browserSpeechLang(): string {
+  if (typeof navigator !== "undefined") {
+    const l = navigator.language?.trim();
+    if (l) return l;
+  }
+  return "en-US";
 }
 
 export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = {}) {
@@ -109,12 +82,92 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { theme } = useTheme();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [chatStatus, setChatStatus] = useState<ChatGraphStatusResponse | null>(null);
   const [hydratedRepoKey, setHydratedRepoKey] = useState<string | null>(null);
+  const [starterChips, setStarterChips] = useState<string[]>([]);
+  const [micBusy, setMicBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chipsScrollRef = useRef<HTMLDivElement>(null);
+  const speechOk = browserSpeechRecognitionSupported();
+
+  const assistantMarkdownComponents = useMemo(
+    () => ({
+      h1: (props: ComponentPropsWithoutRef<"h1">) => (
+        <h1 className="mb-2 mt-3 text-base font-semibold text-gitlore-text first:mt-0" {...props} />
+      ),
+      h2: (props: ComponentPropsWithoutRef<"h2">) => (
+        <h2 className="mb-2 mt-3 text-[15px] font-semibold text-gitlore-text first:mt-0" {...props} />
+      ),
+      h3: (props: ComponentPropsWithoutRef<"h3">) => (
+        <h3 className="mb-1.5 mt-2 text-sm font-semibold text-gitlore-text first:mt-0" {...props} />
+      ),
+      p: (props: ComponentPropsWithoutRef<"p">) => (
+        <p className="mb-2 last:mb-0 leading-relaxed text-gitlore-text" {...props} />
+      ),
+      ul: (props: ComponentPropsWithoutRef<"ul">) => (
+        <ul className="mb-2 list-inside list-disc space-y-1 pl-0.5 text-gitlore-text marker:text-gitlore-text-secondary" {...props} />
+      ),
+      ol: (props: ComponentPropsWithoutRef<"ol">) => (
+        <ol className="mb-2 list-inside list-decimal space-y-1 pl-0.5 text-gitlore-text marker:text-gitlore-text-secondary" {...props} />
+      ),
+      li: (props: ComponentPropsWithoutRef<"li">) => <li className="leading-relaxed [&>p]:mb-0" {...props} />,
+      strong: (props: ComponentPropsWithoutRef<"strong">) => (
+        <strong className="font-semibold text-gitlore-text" {...props} />
+      ),
+      em: (props: ComponentPropsWithoutRef<"em">) => <em className="italic text-gitlore-text" {...props} />,
+      a: (props: ComponentPropsWithoutRef<"a">) => (
+        <a
+          className="text-gitlore-accent underline decoration-gitlore-accent/40 underline-offset-2 transition-colors hover:text-gitlore-accent-hover"
+          target="_blank"
+          rel="noopener noreferrer"
+          {...props}
+        />
+      ),
+      code: ({ className, children, ...props }: ComponentPropsWithoutRef<"code">) => {
+        const isBlock = /language-/.test(className || "");
+        if (isBlock) {
+          return (
+            <code className={className} {...props}>
+              {children}
+            </code>
+          );
+        }
+        return (
+          <code
+            className="rounded-sm bg-gitlore-code px-1.5 py-0.5 font-code text-[13px] text-gitlore-accent"
+            {...props}
+          >
+            {children}
+          </code>
+        );
+      },
+      pre: ({ children }: { children?: ReactNode }) => {
+        try {
+          const child = Children.only(children) as ReactElement<{ className?: string; children?: ReactNode }>;
+          if (isValidElement(child) && /language-mermaid/.test(String(child.props.className || ""))) {
+            const text = String(child.props.children ?? "").replace(/\n$/, "");
+            return <ChatMermaidBlock chart={text} theme={theme} />;
+          }
+        } catch {
+          /* fall through */
+        }
+        return (
+          <pre className="mb-2 max-w-full overflow-x-auto rounded-sm border border-gitlore-border bg-gitlore-code p-3 font-code text-[13px] leading-relaxed text-gitlore-text">
+            {children}
+          </pre>
+        );
+      },
+      blockquote: (props: ComponentPropsWithoutRef<"blockquote">) => (
+        <blockquote className="mb-2 border-l-2 border-gitlore-border pl-3 text-gitlore-text-secondary italic" {...props} />
+      ),
+      hr: () => <hr className="my-3 border-gitlore-border" />,
+    }),
+    [theme]
+  );
 
   useEffect(() => {
     if (!repoReady) {
@@ -177,12 +230,17 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
         return;
       }
 
+      const history = messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role, content: m.content }));
+
       setMessages((prev) => [...prev, { role: "user", content: q }]);
       setLoading(true);
 
       try {
         const res = (await postJSON(`/api/repo/${target.owner}/${target.name}/chat`, {
           question: q,
+          history: history.slice(-24),
         })) as {
           answer: string;
           sources?: Source[];
@@ -234,7 +292,7 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
         setLoading(false);
       }
     },
-    [loading, repoReady, target.owner, target.name, toast, onChatComplete]
+    [loading, repoReady, target.owner, target.name, toast, onChatComplete, messages]
   );
 
   useEffect(() => {
@@ -244,6 +302,24 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
     setInput("");
     void sendChatQuestion(q);
   }, [location.key, location.pathname, navigate, repoReady, sendChatQuestion]);
+
+  useEffect(() => {
+    if (!repoReady) {
+      setStarterChips([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchChatSuggestions(target.owner, target.name)
+      .then((list) => {
+        if (!cancelled) setStarterChips(list);
+      })
+      .catch(() => {
+        if (!cancelled) setStarterChips([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repoReady, target.owner, target.name]);
 
   const handleSend = async () => {
     const q = input.trim();
@@ -266,7 +342,7 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
                   clearChatSessionCache(target.owner, target.name);
                 }}
                 className="inline-flex items-center gap-1 rounded-sm border border-gitlore-border px-2 py-0.5 font-code text-[10px] text-gitlore-text-secondary transition-colors hover:border-gitlore-error/50 hover:text-gitlore-error"
-                title="Clear this repo’s saved chat (local only)"
+                title="Clear this repo's saved chat (local only)"
               >
                 <Trash2 className="h-3 w-3 shrink-0" aria-hidden />
                 Clear chat
@@ -401,6 +477,24 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
       </div>
 
       <div className="shrink-0 border-t border-gitlore-border p-3">
+        {starterChips.length > 0 && (
+          <div
+            ref={chipsScrollRef}
+            className="mb-2 flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {starterChips.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                disabled={loading || !repoReady}
+                onClick={() => void sendChatQuestion(chip)}
+                className="shrink-0 rounded-full border border-gitlore-border bg-gitlore-code px-2.5 py-1 font-code text-[11px] text-gitlore-text-secondary transition-colors hover:border-gitlore-accent/50 hover:text-gitlore-text disabled:opacity-50"
+              >
+                {chip.length > 48 ? `${chip.slice(0, 46)}…` : chip}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2">
           <input
             type="text"
@@ -411,6 +505,29 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
             disabled={loading || !repoReady}
             className="min-w-0 flex-1 rounded-sm border border-gitlore-border bg-gitlore-code px-3 py-2 text-sm text-gitlore-text placeholder:text-gitlore-text-secondary/50 focus:border-gitlore-accent focus:outline-none"
           />
+          {speechOk ? (
+            <button
+              type="button"
+              title="Speak question"
+              disabled={loading || micBusy || !repoReady}
+              onClick={() => {
+                if (micBusy || loading || !repoReady) return;
+                setMicBusy(true);
+                void recognizeSpeechOnce(browserSpeechLang())
+                  .then((text) => {
+                    const t = text.trim();
+                    if (t) setInput((prev) => (prev ? `${prev} ${t}` : t));
+                  })
+                  .catch(() => {
+                    toast({ message: "Speech recognition failed or was cancelled.", type: "error" });
+                  })
+                  .finally(() => setMicBusy(false));
+              }}
+              className="shrink-0 rounded-sm border border-gitlore-border bg-gitlore-code px-3 py-2 text-gitlore-text-secondary transition-colors hover:border-gitlore-accent/50 hover:text-gitlore-text disabled:opacity-50"
+            >
+              <Mic className={`h-4 w-4 ${micBusy ? "animate-pulse" : ""}`} />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void handleSend()}

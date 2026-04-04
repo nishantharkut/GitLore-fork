@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { Maximize2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useRepo } from "@/context/RepoContext";
+import { useTheme, type ThemeMode } from "@/context/ThemeContext";
 import { fetchKnowledgeLayout, type KnowledgeLayoutResponse } from "@/lib/gitloreApi";
 import {
   clearKnowledgeLayoutCache,
@@ -19,22 +28,43 @@ function repoLayoutKey(owner: string, name: string) {
  */
 const knowledgeLayoutCache = new Map<string, KnowledgeLayoutResponse>();
 
-const EDGE_STROKE: Record<string, string> = {
-  pr_pr_time: "rgba(148, 163, 184, 0.35)",
-  pr_pr_issue: "rgba(52, 211, 153, 0.75)",
-  repo_pr: "rgba(201, 168, 76, 0.5)",
-  pr_issue: "rgba(34, 197, 94, 0.55)",
-  contrib_pr: "rgba(129, 140, 248, 0.5)",
-  pr_merge: "rgba(148, 163, 184, 0.55)",
-};
+function edgePaint(kind: string, theme: ThemeMode): { stroke: string; sw: number; dashed?: string } {
+  const d = theme === "dark";
+  const muted = d ? "rgba(148, 163, 184, 0.45)" : "rgba(71, 85, 105, 0.55)";
+  const gold = d ? "rgba(201, 168, 76, 0.75)" : "rgba(180, 83, 9, 0.85)";
+  const green = d ? "rgba(52, 211, 153, 0.85)" : "rgba(21, 128, 61, 0.9)";
+  const green2 = d ? "rgba(34, 197, 94, 0.65)" : "rgba(22, 101, 52, 0.85)";
+  const violet = d ? "rgba(167, 139, 250, 0.65)" : "rgba(109, 40, 217, 0.75)";
+  const indigo = d ? "rgba(129, 140, 248, 0.65)" : "rgba(67, 56, 202, 0.8)";
+  const slate = d ? "rgba(148, 163, 184, 0.55)" : "rgba(100, 116, 139, 0.75)";
+  switch (kind) {
+    case "repo_pr":
+      return { stroke: gold, sw: 2.4 };
+    case "pr_pr_issue":
+      return { stroke: green, sw: 2.5 };
+    case "pr_topic":
+      return { stroke: violet, sw: 1.6, dashed: "4 4" };
+    case "pr_issue":
+      return { stroke: green2, sw: 2 };
+    case "contrib_pr":
+      return { stroke: indigo, sw: 1.85 };
+    case "pr_merge":
+      return { stroke: slate, sw: 1.7 };
+    case "pr_pr_time":
+      return { stroke: muted, sw: 1.25, dashed: "5 8" };
+    default:
+      return { stroke: muted, sw: 1.4 };
+  }
+}
 
 const EDGE_ORDER: Record<string, number> = {
   pr_pr_time: 0,
   pr_pr_issue: 1,
-  repo_pr: 2,
-  contrib_pr: 3,
-  pr_issue: 4,
-  pr_merge: 5,
+  pr_topic: 2,
+  repo_pr: 3,
+  contrib_pr: 4,
+  pr_issue: 5,
+  pr_merge: 6,
 };
 
 const TYPE_LEGEND: Record<string, string> = {
@@ -56,7 +86,39 @@ function clampZoom(z: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 }
 
-function useGraphElements(layout: KnowledgeLayoutResponse | null) {
+type LayoutNode = KnowledgeLayoutResponse["nodes"][0];
+
+/** Bounding box in layout coordinates (aligned with `nodeShape` sizes) for fit-to-view. */
+function nodeBBox(n: LayoutNode): { minX: number; maxX: number; minY: number; maxY: number } {
+  const r = n.r ?? 20;
+  const label = n.label || "";
+  if (n.kind === "repository") {
+    const ww = r * 2.2;
+    const hh = r * 1.15;
+    return { minX: n.x - ww / 2, maxX: n.x + ww / 2, minY: n.y - hh / 2, maxY: n.y + hh / 2 };
+  }
+  if (n.kind === "topic") {
+    const tw = Math.max(56, label.length * 5.8 + 16);
+    const th = 28;
+    return { minX: n.x - tw / 2, maxX: n.x + tw / 2, minY: n.y - th / 2, maxY: n.y + th / 2 };
+  }
+  if (n.kind === "contributor") {
+    const ww = Math.max(72, label.length * 6.5);
+    const hh = 34;
+    return { minX: n.x - ww / 2, maxX: n.x + ww / 2, minY: n.y - hh / 2, maxY: n.y + hh / 2 };
+  }
+  if (n.kind === "issue") {
+    const s = r * 1.15;
+    return { minX: n.x - s, maxX: n.x + s, minY: n.y - s, maxY: n.y + s };
+  }
+  if (n.kind === "merge_commit") {
+    const s = r * 1.05;
+    return { minX: n.x - s, maxX: n.x + s, minY: n.y - s, maxY: n.y + s };
+  }
+  return { minX: n.x - r, maxX: n.x + r, minY: n.y - r, maxY: n.y + r };
+}
+
+function useGraphElements(layout: KnowledgeLayoutResponse | null, theme: ThemeMode) {
   return useMemo(() => {
     if (!layout?.viewBox || !layout.nodes?.length) {
       return { w: 1000, h: 640, edgeEls: null as ReactNode, nodeEls: null as ReactNode };
@@ -73,18 +135,7 @@ function useGraphElements(layout: KnowledgeLayoutResponse | null) {
       const a = byId[e.from];
       const b = byId[e.to];
       if (!a || !b) return null;
-      const stroke = EDGE_STROKE[e.kind] || "rgba(148, 163, 184, 0.4)";
-      const sw =
-        e.kind === "repo_pr"
-          ? 2.2
-          : e.kind === "pr_pr_issue"
-            ? 2.4
-            : e.kind === "pr_issue"
-              ? 1.9
-              : e.kind === "pr_pr_time"
-                ? 1.2
-                : 1.45;
-      const dashed = e.kind === "pr_pr_time" ? "5 8" : undefined;
+      const { stroke, sw, dashed } = edgePaint(e.kind, theme);
       return (
         <line
           key={`e-${e.from}-${e.to}-${e.kind}-${i}`}
@@ -99,22 +150,22 @@ function useGraphElements(layout: KnowledgeLayoutResponse | null) {
       );
     });
 
-    const nodes = layout.nodes.map((n) => nodeShape(n, n.id));
+    const nodes = layout.nodes.map((n) => nodeShape(n, n.id, theme));
 
     return { w: w0, h: h0, edgeEls: edges, nodeEls: nodes };
-  }, [layout]);
+  }, [layout, theme]);
 }
 
-function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string): ReactNode {
+function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string, theme: ThemeMode): ReactNode {
   const r = n.r ?? 20;
-  const fill = n.color;
-  const stroke = n.color;
+  const accent = n.color;
   const label = n.label;
   const sub = n.sublabel ? `${n.sublabel.slice(0, 48)}${n.sublabel.length > 48 ? "…" : ""}` : "";
   const tooltip = [n.label, n.sublabel].filter(Boolean).join(" — ");
+  const L = theme === "light";
 
-  const textFill = "#f1f5f9";
-  const subFill = "#94a3b8";
+  const textMain = L ? "#0f172a" : "#f8fafc";
+  const textSub = L ? "#475569" : "#cbd5e1";
   const fontSmall = 11;
   const fontTiny = 9;
 
@@ -130,6 +181,8 @@ function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string): ReactNo
   if (n.kind === "repository") {
     const w = r * 2.2;
     const h = r * 1.15;
+    const fill = L ? "#fffbeb" : "#1c1917";
+    const stroke = L ? "#d97706" : accent;
     return wrap(
       <g transform={`translate(${n.x}, ${n.y})`}>
         <title>{tooltip}</title>
@@ -140,12 +193,38 @@ function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string): ReactNo
           height={h}
           rx={10}
           fill={fill}
-          fillOpacity={0.25}
+          fillOpacity={L ? 0.95 : 0.92}
           stroke={stroke}
-          strokeWidth={3}
+          strokeWidth={L ? 2.5 : 2.5}
         />
-        <text textAnchor="middle" y={4} fill={textFill} fontSize={fontSmall} fontWeight={600} fontFamily="system-ui, sans-serif">
+        <text textAnchor="middle" y={4} fill={L ? "#78350f" : textMain} fontSize={fontSmall} fontWeight={600} fontFamily="system-ui, sans-serif">
           {label.length > 28 ? `${label.slice(0, 26)}…` : label}
+        </text>
+      </g>
+    );
+  }
+
+  if (n.kind === "topic") {
+    const tw = Math.max(56, label.length * 5.8 + 16);
+    const th = 28;
+    const fill = L ? "#f5f3ff" : "#2e1065";
+    const stroke = L ? "#7c3aed" : "#c4b5fd";
+    return wrap(
+      <g transform={`translate(${n.x}, ${n.y})`}>
+        <title>{tooltip}</title>
+        <rect
+          x={-tw / 2}
+          y={-th / 2}
+          width={tw}
+          height={th}
+          rx={12}
+          fill={fill}
+          fillOpacity={L ? 0.98 : 0.9}
+          stroke={stroke}
+          strokeWidth={L ? 2 : 1.8}
+        />
+        <text textAnchor="middle" y={4} fill={L ? "#4c1d95" : "#ede9fe"} fontSize={9} fontWeight={600} fontFamily="system-ui, sans-serif">
+          {label}
         </text>
       </g>
     );
@@ -154,6 +233,8 @@ function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string): ReactNo
   if (n.kind === "contributor") {
     const w = Math.max(72, label.length * 6.5);
     const h = 34;
+    const fill = L ? "#eef2ff" : "#1e1b4b";
+    const stroke = L ? "#4f46e5" : "#818cf8";
     return wrap(
       <g transform={`translate(${n.x}, ${n.y})`}>
         <title>{tooltip}</title>
@@ -164,11 +245,11 @@ function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string): ReactNo
           height={h}
           rx={8}
           fill={fill}
-          fillOpacity={0.22}
+          fillOpacity={L ? 0.95 : 0.9}
           stroke={stroke}
-          strokeWidth={2}
+          strokeWidth={L ? 2 : 1.8}
         />
-        <text textAnchor="middle" y={5} fill={textFill} fontSize={fontTiny} fontFamily="ui-monospace, monospace">
+        <text textAnchor="middle" y={5} fill={L ? "#312e81" : textMain} fontSize={fontTiny} fontFamily="ui-monospace, monospace">
           {label}
         </text>
       </g>
@@ -178,15 +259,17 @@ function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string): ReactNo
   if (n.kind === "issue") {
     const s = r * 1.15;
     const pts = `0,-${s} ${s},0 0,${s} -${s},0`;
+    const fill = L ? "#ecfdf5" : "#064e3b";
+    const stroke = L ? "#059669" : "#34d399";
     return wrap(
       <g transform={`translate(${n.x}, ${n.y})`}>
         <title>{tooltip}</title>
-        <polygon points={pts} fill={fill} fillOpacity={0.3} stroke={stroke} strokeWidth={2.5} />
-        <text textAnchor="middle" y={4} fill={textFill} fontSize={fontTiny} fontWeight={600} fontFamily="ui-monospace, monospace">
+        <polygon points={pts} fill={fill} fillOpacity={L ? 0.95 : 0.88} stroke={stroke} strokeWidth={L ? 2.5 : 2.2} />
+        <text textAnchor="middle" y={4} fill={L ? "#065f46" : textMain} fontSize={fontTiny} fontWeight={600} fontFamily="ui-monospace, monospace">
           {label}
         </text>
         {sub ? (
-          <text textAnchor="middle" y={16} fill={subFill} fontSize={8} fontFamily="system-ui, sans-serif">
+          <text textAnchor="middle" y={16} fill={textSub} fontSize={8} fontFamily="system-ui, sans-serif">
             {sub}
           </text>
         ) : null}
@@ -197,29 +280,39 @@ function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string): ReactNo
   if (n.kind === "merge_commit") {
     const s = r * 1.05;
     const pts = `0,-${s} ${s},0 0,${s} -${s},0`;
+    const fill = L ? "#f8fafc" : "#334155";
+    const stroke = L ? "#64748b" : "#94a3b8";
     return wrap(
       <g transform={`translate(${n.x}, ${n.y})`}>
         <title>{tooltip}</title>
         <polygon
           points={pts}
           fill={fill}
-          fillOpacity={0.45}
+          fillOpacity={L ? 0.95 : 0.85}
           stroke={stroke}
           strokeWidth={2}
           strokeDasharray="3 2"
         />
-        <text textAnchor="middle" y={4} fill={textFill} fontSize={7} fontFamily="ui-monospace, monospace">
+        <text textAnchor="middle" y={4} fill={L ? "#1e293b" : textMain} fontSize={7} fontFamily="ui-monospace, monospace">
           {label.length > 10 ? `${label.slice(0, 8)}…` : label}
         </text>
       </g>
     );
   }
 
+  const fill = L ? "#ffffff" : "#0f172a";
+  const stroke = accent;
   return wrap(
     <g transform={`translate(${n.x}, ${n.y})`}>
       {n.sublabel ? <title>{tooltip}</title> : <title>{n.label}</title>}
-      <circle r={r} fill={fill} fillOpacity={0.5} stroke={stroke} strokeWidth={3} />
-      <text textAnchor="middle" y={5} fill={textFill} fontSize={fontSmall} fontWeight={700} fontFamily="ui-monospace, monospace">
+      <circle
+        r={r}
+        fill={fill}
+        fillOpacity={L ? 1 : 0.95}
+        stroke={stroke}
+        strokeWidth={L ? 3 : 2.8}
+      />
+      <text textAnchor="middle" y={5} fill={textMain} fontSize={fontSmall} fontWeight={700} fontFamily="ui-monospace, monospace">
         {label}
       </text>
     </g>
@@ -288,32 +381,40 @@ function ZoomToolbar({
 function GraphSvg({
   w,
   h,
+  vx,
+  vy,
+  vw,
+  vh,
   edgeEls,
   nodeEls,
-  zoom,
   className,
+  theme,
+  svgRef,
 }: {
   w: number;
   h: number;
+  vx: number;
+  vy: number;
+  vw: number;
+  vh: number;
   edgeEls: ReactNode;
   nodeEls: ReactNode;
-  zoom: number;
   className?: string;
+  theme: ThemeMode;
+  svgRef?: Ref<SVGSVGElement>;
 }) {
-  const cx = w / 2;
-  const cy = h / 2;
-  const t = `translate(${cx} ${cy}) scale(${zoom}) translate(${-cx} ${-cy})`;
-
+  const bg = theme === "light" ? "#f8fafc" : "#0b0b12";
   return (
     <svg
-      viewBox={`0 0 ${w} ${h}`}
+      ref={svgRef}
+      viewBox={`${vx} ${vy} ${vw} ${vh}`}
       className={className}
       role="img"
       aria-label="Knowledge graph"
       preserveAspectRatio="xMidYMid meet"
     >
-      <rect width={w} height={h} fill="transparent" />
-      <g transform={t}>
+      <rect x={vx} y={vy} width={vw} height={vh} fill={bg} />
+      <g>
         <g>{edgeEls}</g>
         <g>{nodeEls}</g>
       </g>
@@ -321,17 +422,125 @@ function GraphSvg({
   );
 }
 
+type GraphView = { zoom: number; x: number; y: number };
+
+function clampView(w: number, h: number, v: GraphView): GraphView {
+  const z = clampZoom(v.zoom);
+  const vw = w / z;
+  const vh = h / z;
+  /** When zoomed out, vw can exceed w; we must allow negative x/y so the graph can be centered in the viewport. */
+  const minX = Math.min(0, w - vw);
+  const maxX = Math.max(0, w - vw);
+  const minY = Math.min(0, h - vh);
+  const maxY = Math.max(0, h - vh);
+  return {
+    zoom: z,
+    x: Math.min(maxX, Math.max(minX, v.x)),
+    y: Math.min(maxY, Math.max(minY, v.y)),
+  };
+}
+
+/** Initial / reset view: frame all nodes with padding instead of full empty viewBox. */
+function computeFitView(w: number, h: number, nodes: LayoutNode[]): GraphView {
+  if (!nodes.length) return { zoom: 1, x: 0, y: 0 };
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const n of nodes) {
+    const b = nodeBBox(n);
+    minX = Math.min(minX, b.minX);
+    minY = Math.min(minY, b.minY);
+    maxX = Math.max(maxX, b.maxX);
+    maxY = Math.max(maxY, b.maxY);
+  }
+  const pad = 64;
+  minX -= pad;
+  minY -= pad;
+  maxX += pad;
+  maxY += pad;
+  const bw = Math.max(1, maxX - minX);
+  const bh = Math.max(1, maxY - minY);
+  const zoomFit = Math.min(w / bw, h / bh);
+  const zoom = clampZoom(zoomFit);
+  const vw = w / zoom;
+  const vh = h / zoom;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const x = cx - vw / 2;
+  const y = cy - vh / 2;
+  return clampView(w, h, { zoom, x, y });
+}
+
+function zoomViewAroundCenter(w: number, h: number, prev: GraphView, factor: number): GraphView {
+  const old = clampView(w, h, prev);
+  const oldVw = w / old.zoom;
+  const oldVh = h / old.zoom;
+  const cx = old.x + oldVw / 2;
+  const cy = old.y + oldVh / 2;
+  const newZ = clampZoom(old.zoom * factor);
+  const nvw = w / newZ;
+  const nvh = h / newZ;
+  let nx = cx - nvw / 2;
+  let ny = cy - nvh / 2;
+  return clampView(w, h, { zoom: newZ, x: nx, y: ny });
+}
+
+/** Zoom so the graph point under the pointer stays under the pointer (trackpad / wheel). */
+function zoomViewAroundPointer(
+  w: number,
+  h: number,
+  prev: GraphView,
+  factor: number,
+  clientX: number,
+  clientY: number,
+  rect: DOMRectReadOnly
+): GraphView {
+  if (rect.width < 2 || rect.height < 2) {
+    return zoomViewAroundCenter(w, h, prev, factor);
+  }
+  const old = clampView(w, h, prev);
+  const oldVw = w / old.zoom;
+  const oldVh = h / old.zoom;
+  const mx = Math.min(Math.max(0, clientX - rect.left), rect.width);
+  const my = Math.min(Math.max(0, clientY - rect.top), rect.height);
+  const nx = mx / rect.width;
+  const ny = my / rect.height;
+  const graphX = old.x + nx * oldVw;
+  const graphY = old.y + ny * oldVh;
+  const newZ = clampZoom(old.zoom * factor);
+  const nvw = w / newZ;
+  const nvh = h / newZ;
+  const vx = graphX - nx * nvw;
+  const vy = graphY - ny * nvh;
+  return clampView(w, h, { zoom: newZ, x: vx, y: vy });
+}
+
 export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: number }) {
   const { target, repoReady } = useRepo();
+  const { theme } = useTheme();
   const [layout, setLayout] = useState<KnowledgeLayoutResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
-  const [zoom, setZoom] = useState(1);
-  const [modalZoom, setModalZoom] = useState(1);
+  const [view, setView] = useState<GraphView>({ zoom: 1, x: 0, y: 0 });
+  const [modalView, setModalView] = useState<GraphView>({ zoom: 1, x: 0, y: 0 });
   const [modalOpen, setModalOpen] = useState(false);
   const lastRepoKeyRef = useRef<string | null>(null);
   const prevRefreshKeyRef = useRef(refreshKey);
+  const dimsRef = useRef({ w: 1000, h: 640 });
+  const dragRef = useRef(false);
+  const modalDragRef = useRef(false);
+  const inlineSvgRef = useRef<SVGSVGElement>(null);
+  const modalSvgRef = useRef<SVGSVGElement>(null);
+  const inlinePanSurfaceRef = useRef<HTMLDivElement>(null);
+  const modalPanSurfaceRef = useRef<HTMLDivElement>(null);
+  const inlinePanLastClient = useRef<{ x: number; y: number } | null>(null);
+  const modalPanLastClient = useRef<{ x: number; y: number } | null>(null);
+  const inlinePanPixelAccum = useRef({ dx: 0, dy: 0 });
+  const modalPanPixelAccum = useRef({ dx: 0, dy: 0 });
+  const inlinePanRaf = useRef<number | null>(null);
+  const modalPanRaf = useRef<number | null>(null);
 
   useEffect(() => {
     if (!repoReady) {
@@ -408,7 +617,27 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
     };
   }, [repoReady, target.owner, target.name, refreshKey, retryTick]);
 
-  const { w, h, edgeEls, nodeEls } = useGraphElements(layout);
+  const { w, h, edgeEls, nodeEls } = useGraphElements(layout, theme);
+  dimsRef.current = { w, h };
+
+  const layoutSig =
+    layout?.viewBox && layout.nodes?.length
+      ? `${layout.viewBox.w}x${layout.viewBox.h}-${layout.nodes.length}-${layout.edges?.length ?? 0}`
+      : "";
+  useEffect(() => {
+    if (!layoutSig || !layout?.nodes?.length) return;
+    const fit = computeFitView(w, h, layout.nodes);
+    setView(fit);
+    setModalView(fit);
+  }, [layoutSig, w, h, layout]);
+
+  const cv = useMemo(() => clampView(w, h, view), [w, h, view]);
+  const vw = w / cv.zoom;
+  const vh = h / cv.zoom;
+
+  const modalCv = useMemo(() => clampView(w, h, modalView), [w, h, modalView]);
+  const mvw = w / modalCv.zoom;
+  const mvh = h / modalCv.zoom;
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -424,30 +653,210 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
     };
   }, [modalOpen]);
 
-  const zoomIn = useCallback(() => setZoom((z) => clampZoom(z + ZOOM_STEP)), []);
-  const zoomOut = useCallback(() => setZoom((z) => clampZoom(z - ZOOM_STEP)), []);
-  const zoomReset = useCallback(() => setZoom(1), []);
+  const zoomIn = useCallback(() => {
+    const { w: W, h: H } = dimsRef.current;
+    setView((v) => zoomViewAroundCenter(W, H, v, 1 + ZOOM_STEP));
+  }, []);
+  const zoomOut = useCallback(() => {
+    const { w: W, h: H } = dimsRef.current;
+    setView((v) => zoomViewAroundCenter(W, H, v, 1 / (1 + ZOOM_STEP)));
+  }, []);
+  const zoomReset = useCallback(() => {
+    const { w: W, h: H } = dimsRef.current;
+    const nodes = layout?.nodes;
+    if (nodes?.length) setView(computeFitView(W, H, nodes));
+    else setView({ zoom: 1, x: 0, y: 0 });
+  }, [layout]);
 
-  const modalZoomIn = useCallback(() => setModalZoom((z) => clampZoom(z + ZOOM_STEP)), []);
-  const modalZoomOut = useCallback(() => setModalZoom((z) => clampZoom(z - ZOOM_STEP)), []);
-  const modalZoomReset = useCallback(() => setModalZoom(1), []);
+  const modalZoomIn = useCallback(() => {
+    const { w: W, h: H } = dimsRef.current;
+    setModalView((v) => zoomViewAroundCenter(W, H, v, 1 + ZOOM_STEP));
+  }, []);
+  const modalZoomOut = useCallback(() => {
+    const { w: W, h: H } = dimsRef.current;
+    setModalView((v) => zoomViewAroundCenter(W, H, v, 1 / (1 + ZOOM_STEP)));
+  }, []);
+  const modalZoomReset = useCallback(() => {
+    const { w: W, h: H } = dimsRef.current;
+    const nodes = layout?.nodes;
+    if (nodes?.length) setModalView(computeFitView(W, H, nodes));
+    else setModalView({ zoom: 1, x: 0, y: 0 });
+  }, [layout]);
 
-  const wheelZoomInline = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    if (!e.ctrlKey && !e.metaKey) return;
-    e.preventDefault();
-    setZoom((z) => clampZoom(z + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)));
+  /** Pan on background/edges; on PR/issue links use Ctrl/Cmd+drag or middle mouse (middle on link = open in new tab). */
+  const wantsPan = (e: React.PointerEvent) => {
+    const el = e.target as Element | null;
+    const onLink = Boolean(el?.closest?.("a"));
+    if (e.button === 1) return !onLink;
+    if (e.button !== 0) return false;
+    if (onLink) return e.ctrlKey || e.metaKey;
+    return true;
+  };
+
+  const flushInlinePan = useCallback(() => {
+    const acc = inlinePanPixelAccum.current;
+    if (acc.dx === 0 && acc.dy === 0) return;
+    const dx = acc.dx;
+    const dy = acc.dy;
+    acc.dx = 0;
+    acc.dy = 0;
+    const svg = inlineSvgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return;
+    const { w: W, h: H } = dimsRef.current;
+    setView((v) => {
+      const vbw = W / v.zoom;
+      const vbh = H / v.zoom;
+      const sx = -(dx / rect.width) * vbw;
+      const sy = -(dy / rect.height) * vbh;
+      return clampView(W, H, { ...v, x: v.x + sx, y: v.y + sy });
+    });
   }, []);
 
-  const wheelZoomModal = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    if (!e.ctrlKey && !e.metaKey) return;
-    e.preventDefault();
-    setModalZoom((z) => clampZoom(z + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)));
+  const flushModalPan = useCallback(() => {
+    const acc = modalPanPixelAccum.current;
+    if (acc.dx === 0 && acc.dy === 0) return;
+    const dx = acc.dx;
+    const dy = acc.dy;
+    acc.dx = 0;
+    acc.dy = 0;
+    const svg = modalSvgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return;
+    const { w: W, h: H } = dimsRef.current;
+    setModalView((v) => {
+      const vbw = W / v.zoom;
+      const vbh = H / v.zoom;
+      const sx = -(dx / rect.width) * vbw;
+      const sy = -(dy / rect.height) * vbh;
+      return clampView(W, H, { ...v, x: v.x + sx, y: v.y + sy });
+    });
   }, []);
+
+  const onInlinePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!wantsPan(e)) return;
+    e.preventDefault();
+    dragRef.current = true;
+    inlinePanLastClient.current = { x: e.clientX, y: e.clientY };
+    inlinePanPixelAccum.current = { dx: 0, dy: 0 };
+    if (inlinePanRaf.current != null) {
+      cancelAnimationFrame(inlinePanRaf.current);
+      inlinePanRaf.current = null;
+    }
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+  const onInlinePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragRef.current || !inlinePanLastClient.current || !inlineSvgRef.current) return;
+      const last = inlinePanLastClient.current;
+      const dx = e.clientX - last.x;
+      const dy = e.clientY - last.y;
+      inlinePanLastClient.current = { x: e.clientX, y: e.clientY };
+      inlinePanPixelAccum.current.dx += dx;
+      inlinePanPixelAccum.current.dy += dy;
+      if (inlinePanRaf.current == null) {
+        inlinePanRaf.current = requestAnimationFrame(() => {
+          inlinePanRaf.current = null;
+          flushInlinePan();
+        });
+      }
+    },
+    [flushInlinePan]
+  );
+  const onInlinePointerUp = useCallback(() => {
+    if (inlinePanRaf.current != null) {
+      cancelAnimationFrame(inlinePanRaf.current);
+      inlinePanRaf.current = null;
+    }
+    flushInlinePan();
+    dragRef.current = false;
+    inlinePanLastClient.current = null;
+  }, [flushInlinePan]);
+
+  const onModalPointerDown = useCallback((e: React.PointerEvent) => {
+    if (!wantsPan(e)) return;
+    e.preventDefault();
+    modalDragRef.current = true;
+    modalPanLastClient.current = { x: e.clientX, y: e.clientY };
+    modalPanPixelAccum.current = { dx: 0, dy: 0 };
+    if (modalPanRaf.current != null) {
+      cancelAnimationFrame(modalPanRaf.current);
+      modalPanRaf.current = null;
+    }
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+  const onModalPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!modalDragRef.current || !modalPanLastClient.current || !modalSvgRef.current) return;
+      const last = modalPanLastClient.current;
+      const dx = e.clientX - last.x;
+      const dy = e.clientY - last.y;
+      modalPanLastClient.current = { x: e.clientX, y: e.clientY };
+      modalPanPixelAccum.current.dx += dx;
+      modalPanPixelAccum.current.dy += dy;
+      if (modalPanRaf.current == null) {
+        modalPanRaf.current = requestAnimationFrame(() => {
+          modalPanRaf.current = null;
+          flushModalPan();
+        });
+      }
+    },
+    [flushModalPan]
+  );
+  const onModalPointerUp = useCallback(() => {
+    if (modalPanRaf.current != null) {
+      cancelAnimationFrame(modalPanRaf.current);
+      modalPanRaf.current = null;
+    }
+    flushModalPan();
+    modalDragRef.current = false;
+    modalPanLastClient.current = null;
+  }, [flushModalPan]);
+
+  const hasGraph = Boolean(layout?.nodes?.length);
+  const canRenderSvg = edgeEls != null && nodeEls != null && hasGraph;
+
+  /** Wheel zoom toward cursor; non-passive so the page doesn’t scroll while over the graph. */
+  useEffect(() => {
+    const el = inlinePanSurfaceRef.current;
+    if (!el || !canRenderSvg) return;
+    const onWheel = (e: WheelEvent) => {
+      const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+      if (delta === 0) return;
+      e.preventDefault();
+      const svg = inlineSvgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const { w: W, h: H } = dimsRef.current;
+      const factor = delta < 0 ? 1 + ZOOM_STEP * 0.85 : 1 / (1 + ZOOM_STEP * 0.85);
+      setView((v) => zoomViewAroundPointer(W, H, v, factor, e.clientX, e.clientY, rect));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [canRenderSvg, w, h]);
+
+  useEffect(() => {
+    const el = modalPanSurfaceRef.current;
+    if (!el || !modalOpen || !canRenderSvg) return;
+    const onWheel = (e: WheelEvent) => {
+      const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+      if (delta === 0) return;
+      e.preventDefault();
+      const svg = modalSvgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const { w: W, h: H } = dimsRef.current;
+      const factor = delta < 0 ? 1 + ZOOM_STEP * 0.85 : 1 / (1 + ZOOM_STEP * 0.85);
+      setModalView((v) => zoomViewAroundPointer(W, H, v, factor, e.clientX, e.clientY, rect));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [modalOpen, canRenderSvg, w, h]);
 
   if (!repoReady) return null;
 
-  const hasGraph = layout && layout.nodes && layout.nodes.length > 0;
-  const canRenderSvg = edgeEls != null && nodeEls != null && hasGraph;
   const showLoadingOverlay = loading && !hasGraph;
 
   return (
@@ -457,9 +866,10 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
           <div>
             <h3 className="text-sm font-medium text-gitlore-text">Knowledge graph</h3>
             <p className="mt-0.5 max-w-[52rem] text-xs leading-relaxed text-gitlore-text-secondary">
-              Contributors sit in a row at the bottom (lines go up to their PRs). Use zoom and the expand control for a large
-              popup. <span className="text-emerald-400/90">Solid green</span> = PRs share a closing issue;{" "}
-              <span className="text-slate-400">dotted</span> = merge-time neighbors. Hover PRs for titles.
+              Ingested PR decisions, themes, issues, authors, and merge history — the same evidence the side chat uses.{" "}
+              <span className="text-gitlore-text">Drag</span> to pan (on nodes: use Ctrl/Cmd+drag or middle-drag on empty
+              area). <span className="text-gitlore-text">Scroll</span> zooms toward the pointer. Green links = shared closing
+              issue; dotted = merge-time neighbors; violet dashed = PR → theme.
             </p>
           </div>
         </div>
@@ -511,27 +921,37 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
           <>
             <div className="pointer-events-none absolute right-3 top-3 z-20 md:right-4 md:top-4">
               <ZoomToolbar
-                zoom={zoom}
+                zoom={cv.zoom}
                 onZoomIn={zoomIn}
                 onZoomOut={zoomOut}
                 onReset={zoomReset}
                 onExpand={() => {
-                  setModalZoom(1);
+                  setModalView(cv);
                   setModalOpen(true);
                 }}
               />
             </div>
             <div
-              className="overflow-auto rounded-sm border border-gitlore-border/60 bg-gitlore-code/30 pt-10"
-              onWheel={wheelZoomInline}
+              ref={inlinePanSurfaceRef}
+              className="touch-none select-none overflow-hidden rounded-sm border border-gitlore-border/60 bg-gitlore-code/20 pt-10 cursor-grab active:cursor-grabbing [&_a]:cursor-pointer"
+              onPointerDown={onInlinePointerDown}
+              onPointerMove={onInlinePointerMove}
+              onPointerUp={onInlinePointerUp}
+              onPointerCancel={onInlinePointerUp}
+              onLostPointerCapture={onInlinePointerUp}
             >
               <GraphSvg
+                svgRef={inlineSvgRef}
                 w={w}
                 h={h}
+                vx={cv.x}
+                vy={cv.y}
+                vw={vw}
+                vh={vh}
                 edgeEls={edgeEls}
                 nodeEls={nodeEls}
-                zoom={zoom}
-                className="mx-auto block min-h-[min(68vh,760px)] w-full min-w-[1000px] max-w-full"
+                theme={theme}
+                className="block h-[min(48vh,520px)] min-h-[220px] w-full cursor-grab active:cursor-grabbing [&_a]:cursor-pointer"
               />
             </div>
           </>
@@ -550,12 +970,12 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
             </div>
             <p className="leading-relaxed">
               <span className="text-gitlore-accent">■</span> repo &nbsp;
-              <span style={{ color: "#818cf8" }}>■</span> contributor (bottom) &nbsp;
-              <span style={{ color: "#22c55e" }}>◆</span> linked issue &nbsp;
-              <span className="text-slate-400">◇</span> merge commit &nbsp;
-              <span className="text-emerald-400/80">━</span> shared issue &nbsp;
-              <span className="text-slate-500">┅</span> time — click nodes for GitHub. &nbsp;
-              <span className="text-gitlore-text-secondary/90">Ctrl/Cmd+wheel on graph to zoom.</span>
+              <span className="text-violet-500 dark:text-violet-300">▬</span> theme (from ingest) &nbsp;
+              <span className="text-indigo-600 dark:text-indigo-300">■</span> contributor &nbsp;
+              <span className="text-emerald-600 dark:text-emerald-400">◆</span> issue &nbsp;
+              <span className="text-slate-500 dark:text-slate-400">◇</span> merge &nbsp;
+              <span className="text-emerald-600 dark:text-emerald-400">━</span> shared issue &nbsp;
+              <span className="text-slate-500 dark:text-slate-400">┅</span> time order — open nodes on GitHub.
             </p>
           </div>
         )}
@@ -579,7 +999,7 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
               </h2>
               <div className="flex items-center gap-2">
                 <ZoomToolbar
-                  zoom={modalZoom}
+                  zoom={modalCv.zoom}
                   onZoomIn={modalZoomIn}
                   onZoomOut={modalZoomOut}
                   onReset={modalZoomReset}
@@ -596,20 +1016,30 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
               </div>
             </div>
             <div
-              className="min-h-0 flex-1 overflow-auto bg-gitlore-code/20 p-2 md:p-4"
-              onWheel={wheelZoomModal}
+              ref={modalPanSurfaceRef}
+              className="min-h-0 flex-1 touch-none select-none overflow-hidden bg-gitlore-code/20 p-2 md:p-4 cursor-grab active:cursor-grabbing [&_a]:cursor-pointer"
+              onPointerDown={onModalPointerDown}
+              onPointerMove={onModalPointerMove}
+              onPointerUp={onModalPointerUp}
+              onPointerCancel={onModalPointerUp}
+              onLostPointerCapture={onModalPointerUp}
             >
               <GraphSvg
+                svgRef={modalSvgRef}
                 w={w}
                 h={h}
+                vx={modalCv.x}
+                vy={modalCv.y}
+                vw={mvw}
+                vh={mvh}
                 edgeEls={edgeEls}
                 nodeEls={nodeEls}
-                zoom={modalZoom}
-                className="mx-auto block min-h-[75vh] w-full min-w-[1100px]"
+                theme={theme}
+                className="block h-[75vh] w-full cursor-grab active:cursor-grabbing [&_a]:cursor-pointer"
               />
             </div>
             <p className="shrink-0 border-t border-gitlore-border px-4 py-2 text-center text-[10px] text-gitlore-text-secondary">
-              Scroll to pan. Ctrl/Cmd + wheel to zoom. Esc or backdrop to close.
+              Drag to pan · scroll zooms under cursor · Ctrl/Cmd+drag on nodes to pan · Esc or backdrop to close
             </p>
           </div>
         </div>

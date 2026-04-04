@@ -672,6 +672,25 @@ export async function aggregatePatternCounts(
     .slice(0, 12);
 }
 
+export type ChurnHotspot = {
+  file: string;
+  prCount: number;
+  types: string[];
+  prs: Array<{ number: number; type: string; title: string }>;
+};
+
+export type DecisionOscillation = {
+  earlier: { pr_number: number; title: string; decision: string };
+  later: { pr_number: number; title: string; decision: string };
+  sharedTerms: string[];
+};
+
+export type DecisionTimelineMonth = {
+  month: string;
+  count: number;
+  types: Record<string, number>;
+};
+
 /** Repo-scoped pattern / theme insights for the Patterns UI (Mongo only, not cached with repo overview). */
 export type RepoPatternInsights = {
   explain: {
@@ -688,6 +707,9 @@ export type RepoPatternInsights = {
     byConfidence: { high: number; medium: number; low: number };
     topFiles: Array<{ path: string; count: number }>;
   };
+  churnHotspots: ChurnHotspot[];
+  decisionOscillations: DecisionOscillation[];
+  decisionTimeline: DecisionTimelineMonth[];
 };
 
 export async function aggregateRepoPatternInsights(
@@ -773,6 +795,115 @@ export async function aggregateRepoPatternInsights(
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
 
+  let churnHotspots: ChurnHotspot[] = [];
+  try {
+    const churnRaw = await db
+      .collection("knowledge_nodes")
+      .aggregate([
+        { $match: { repo: repoRe, changed_files: { $exists: true, $type: "array", $ne: [] } } },
+        { $unwind: "$changed_files" },
+        { $match: { changed_files: { $type: "string", $ne: "" } } },
+        {
+          $group: {
+            _id: "$changed_files",
+            prCount: { $sum: 1 },
+            types: { $addToSet: "$type" },
+            prs: { $push: { number: "$pr_number", type: "$type", title: "$title" } },
+          },
+        },
+        { $match: { prCount: { $gte: 2 } } },
+        { $sort: { prCount: -1 } },
+        { $limit: 10 },
+      ])
+      .toArray();
+    churnHotspots = churnRaw.map((x) => ({
+      file: String(x._id),
+      prCount: x.prCount as number,
+      types: (x.types as string[]).filter(Boolean).map(String),
+      prs: ((x.prs as Array<{ number?: number; type?: string; title?: string }>) || []).map((p) => ({
+        number: Number(p.number) || 0,
+        type: String(p.type || "other"),
+        title: String(p.title || "").slice(0, 200),
+      })),
+    }));
+  } catch {
+    churnHotspots = [];
+  }
+
+  const kgNodes = await db
+    .collection("knowledge_nodes")
+    .find({ repo: repoRe })
+    .project({
+      pr_number: 1,
+      title: 1,
+      decision: 1,
+      alternatives: 1,
+      merged_at: 1,
+      type: 1,
+    })
+    .limit(80)
+    .toArray();
+
+  const decisionTimelineMap = new Map<string, { count: number; types: Record<string, number> }>();
+  for (const n of kgNodes) {
+    const raw = (n as any).merged_at;
+    const d = raw ? new Date(raw) : null;
+    if (!d || Number.isNaN(d.getTime())) continue;
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const ty = String((n as any).type || "other");
+    const cur = decisionTimelineMap.get(month) || { count: 0, types: {} };
+    cur.count++;
+    cur.types[ty] = (cur.types[ty] || 0) + 1;
+    decisionTimelineMap.set(month, cur);
+  }
+  const decisionTimeline: DecisionTimelineMonth[] = [...decisionTimelineMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, v]) => ({ month, count: v.count, types: v.types }));
+
+  const decisionOscillations: DecisionOscillation[] = [];
+  const seenPair = new Set<string>();
+  const wordRe = /\w+/g;
+  for (let i = 0; i < kgNodes.length; i++) {
+    for (let j = 0; j < kgNodes.length; j++) {
+      if (i === j) continue;
+      const a = kgNodes[i] as any;
+      const b = kgNodes[j] as any;
+      const ta = a.merged_at ? new Date(a.merged_at).getTime() : 0;
+      const tb = b.merged_at ? new Date(b.merged_at).getTime() : 0;
+      if (!(ta && tb && ta < tb)) continue;
+      const alts: string[] = Array.isArray(a.alternatives) ? a.alternatives.map(String) : [];
+      const decisionB = String(b.decision || "");
+      if (!alts.length || !decisionB.trim()) continue;
+      const shared = new Set<string>();
+      for (const alt of alts) {
+        const words = alt.toLowerCase().match(wordRe) || [];
+        for (const w of words) {
+          if (w.length <= 5) continue;
+          if (decisionB.toLowerCase().includes(w)) shared.add(w);
+        }
+      }
+      if (shared.size === 0) continue;
+      const key = `${a.pr_number}-${b.pr_number}`;
+      if (seenPair.has(key)) continue;
+      seenPair.add(key);
+      decisionOscillations.push({
+        earlier: {
+          pr_number: Number(a.pr_number),
+          title: String(a.title || "").slice(0, 160),
+          decision: String(a.decision || "").slice(0, 400),
+        },
+        later: {
+          pr_number: Number(b.pr_number),
+          title: String(b.title || "").slice(0, 160),
+          decision: String(b.decision || "").slice(0, 400),
+        },
+        sharedTerms: [...shared].slice(0, 10),
+      });
+      if (decisionOscillations.length >= 10) break;
+    }
+    if (decisionOscillations.length >= 10) break;
+  }
+
   return {
     explain: { labels, rowCount: explainDocs.length },
     knowledgeGraph: { prNodeCount, byType, topTopics },
@@ -781,6 +912,9 @@ export async function aggregateRepoPatternInsights(
       byConfidence: { high, medium, low },
       topFiles,
     },
+    churnHotspots,
+    decisionOscillations,
+    decisionTimeline,
   };
 }
 

@@ -384,8 +384,12 @@ export async function ingestRepo(
         batch.map(async (pr) => {
           const knowledge = await withGemini429Retry(() => extractKnowledge(pr));
           const topics = (knowledge.topics || []).join(", ");
+          const issueBodies = (pr.closingIssuesReferences?.nodes || [])
+            .map((i: any) => trunc(String(i.body || "").replace(/\s+/g, " "), 400))
+            .filter(Boolean)
+            .join(" ");
           const embeddingText =
-            `${knowledge.title}. ${knowledge.summary}. ${knowledge.decision}. Topics: ${topics}`.trim();
+            `${knowledge.title}. ${knowledge.summary}. ${knowledge.problem}. ${knowledge.decision}. Topics: ${topics}. Linked issue context: ${issueBodies}`.trim();
           let embedding: number[] | null = null;
           try {
             embedding = await withGemini429Retry(() => getEmbedding(embeddingText, "document"), {
@@ -406,6 +410,8 @@ export async function ingestRepo(
             number: i.number,
             title: i.title || `Issue #${i.number}`,
             url: `https://github.com/${owner}/${repo}/issues/${i.number}`,
+            /** Short excerpt for KG chat — full issue text is not re-fetched at Q&A time. */
+            body_excerpt: trunc(String(i.body || "").replace(/\s+/g, " ").trim(), 720),
           }));
 
           const merge_commit = pr.mergeCommit

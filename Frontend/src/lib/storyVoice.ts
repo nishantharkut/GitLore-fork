@@ -80,5 +80,5 @@ Rules:
 - Answer only about this story and this code context unless the user changes topic clearly.
 - Be concise for voice; prefer short sentences.
 - If you do not know, say so.
-- Speak in English.`;
+- The user may speak English or Hindi; respond in the same language they use.`;
 }

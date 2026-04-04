@@ -3,7 +3,12 @@ import { z } from "zod";
 import { getDB } from "../lib/mongo";
 import { getUserToken, getCurrentUser } from "../middleware/auth";
 import { createGithubClient, getBlameForLine, getIssue, getPullRequest } from "../lib/github";
-import { generateNarrative, getEmbedding } from "../lib/gemini";
+import {
+  GEMINI_CLIENT_FRIENDLY_MESSAGE,
+  generateNarrative,
+  getEmbedding,
+  isLikelyGeminiRelatedError,
+} from "../lib/gemini";
 
 export const analyzeRouter = new Hono();
 
@@ -235,16 +240,15 @@ analyzeRouter.post("/analyze", async (c) => {
     }
 
     const raw = error instanceof Error ? error.message : String(error);
-    const message =
-      process.env.NODE_ENV === "development"
+    const message = isLikelyGeminiRelatedError(raw)
+      ? GEMINI_CLIENT_FRIENDLY_MESSAGE
+      : process.env.NODE_ENV === "development"
         ? raw.slice(0, 400)
-        : /gemini|narrative|embedding|Generative|API key|quota|429/i.test(raw)
-          ? "AI step failed (Gemini quota, key, or model). Check backend logs and GEMINI_API_KEY."
-          : /mongo|Mongo|database|connect|commit_cache/i.test(raw)
-            ? "Database error while saving analysis. Check MongoDB and logs."
-            : /github|GitHub|rate limit|403|401|Not Found/i.test(raw)
-              ? "GitHub API error (rate limit, scope, or repo access). Check logs."
-              : "Unexpected error — try again. See server logs for details.";
+        : /mongo|Mongo|database|connect|commit_cache/i.test(raw)
+          ? "Database error while saving analysis. Check MongoDB and logs."
+          : /github|GitHub|rate limit|403|401|Not Found/i.test(raw)
+            ? "GitHub API error (rate limit, scope, or repo access). Check logs."
+            : "Unexpected error — try again. See server logs for details.";
     return c.json(
       {
         error: "Failed to generate analysis",

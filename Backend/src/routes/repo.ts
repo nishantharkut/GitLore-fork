@@ -30,6 +30,7 @@ import {
   countCommitsApproxRest,
   GithubRestError,
 } from "../lib/githubRest";
+import { getOrScanRepoPatterns } from "../lib/patternScanner";
 
 export const repoRouter = new Hono();
 
@@ -455,6 +456,43 @@ repoRouter.get("/repo/:owner/:name/pulls/:number/diff-review", async (c) => {
     return c.json(
       {
         error: "Failed to load pull request diff",
+        message:
+          process.env.NODE_ENV === "development" && error instanceof Error
+            ? error.message
+            : undefined,
+      },
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/repo/:owner/:name/scan-patterns?branch=&refresh=1
+ * Regex scan of up to 50 text files; cached in Mongo ~1h unless refresh=1.
+ */
+repoRouter.get("/repo/:owner/:name/scan-patterns", async (c) => {
+  try {
+    const user = getCurrentUser(c);
+    if (!user) return c.json({ error: "Not authenticated" }, 401);
+
+    const owner = c.req.param("owner");
+    const name = c.req.param("name");
+    if (!owner || !name) {
+      return c.json({ error: "Missing owner or repository name" }, 400);
+    }
+
+    const branchHint = c.req.query("branch") || "";
+    const refreshRaw = (c.req.query("refresh") || "").toLowerCase();
+    const forceRefresh = refreshRaw === "1" || refreshRaw === "true" || refreshRaw === "yes";
+
+    const db = getDB();
+    const data = await getOrScanRepoPatterns(db, user.access_token, owner, name, branchHint, forceRefresh);
+    return c.json(data);
+  } catch (error) {
+    console.error("scan-patterns error:", error);
+    return c.json(
+      {
+        error: "Failed to scan repository patterns",
         message:
           process.env.NODE_ENV === "development" && error instanceof Error
             ? error.message

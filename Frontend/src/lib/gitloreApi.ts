@@ -241,8 +241,12 @@ export async function postJSON<T>(path: string, body: unknown): Promise<T> {
   }
   if (!res.ok) {
     // Prefer `message` when both exist (e.g. analyze 500: error title + actionable message).
-    const msg =
+    let msg =
       (data.message as string) || (data.error as string) || res.statusText;
+    if (res.status === 401) {
+      msg =
+        "Your GitHub session is missing or expired. Sign out and sign in again with GitHub, or refresh the page.";
+    }
     throw new Error(msg);
   }
   return data as T;
@@ -475,6 +479,25 @@ export async function fetchRepoOverview(
   return getJSON<RepoOverviewResponse>(`/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${q}`);
 }
 
+export type ChurnHotspot = {
+  file: string;
+  prCount: number;
+  types: string[];
+  prs: Array<{ number: number; type: string; title: string }>;
+};
+
+export type DecisionOscillation = {
+  earlier: { pr_number: number; title: string; decision: string };
+  later: { pr_number: number; title: string; decision: string };
+  sharedTerms: string[];
+};
+
+export type DecisionTimelineMonth = {
+  month: string;
+  count: number;
+  types: Record<string, number>;
+};
+
 export type RepoPatternInsightsResponse = {
   explain: {
     labels: Array<{ text: string; count: number }>;
@@ -490,6 +513,28 @@ export type RepoPatternInsightsResponse = {
     byConfidence: { high: number; medium: number; low: number };
     topFiles: Array<{ path: string; count: number }>;
   };
+  churnHotspots: ChurnHotspot[];
+  decisionOscillations: DecisionOscillation[];
+  decisionTimeline: DecisionTimelineMonth[];
+};
+
+export type PatternScanMatch = { file: string; line: number; snippet: string };
+
+export type PatternScanResultRow = {
+  patternId: string;
+  name: string;
+  severity: "critical" | "high" | "medium" | "low";
+  category: "security" | "performance" | "reliability" | "maintainability";
+  matchCount: number;
+  matches: PatternScanMatch[];
+};
+
+export type RepoPatternScanResponse = {
+  scannedAt: string;
+  fileCount: number;
+  cached: boolean;
+  branch: string;
+  patterns: PatternScanResultRow[];
 };
 
 export async function fetchRepoPatternInsights(
@@ -498,6 +543,20 @@ export async function fetchRepoPatternInsights(
 ): Promise<RepoPatternInsightsResponse> {
   return getJSON<RepoPatternInsightsResponse>(
     `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pattern-insights`
+  );
+}
+
+export async function fetchRepoPatternScan(
+  owner: string,
+  name: string,
+  opts?: { branch?: string; refresh?: boolean }
+): Promise<RepoPatternScanResponse> {
+  const q = new URLSearchParams();
+  if (opts?.branch) q.set("branch", opts.branch);
+  if (opts?.refresh) q.set("refresh", "1");
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return getJSON<RepoPatternScanResponse>(
+    `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/scan-patterns${suffix}`
   );
 }
 
@@ -664,6 +723,36 @@ export async function fetchChatGraphStatus(
   );
 }
 
+/** Repo-specific starter questions from ingested KG (types + topics). */
+export async function fetchChatSuggestions(owner: string, name: string): Promise<string[]> {
+  const j = await getJSON<{ suggestions?: string[] }>(
+    `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/chat/suggestions`
+  );
+  return Array.isArray(j.suggestions) ? j.suggestions : [];
+}
+
+export type KgFileRelatedItem = {
+  pr_number: number;
+  pr_url: string;
+  title: string;
+  summary: string;
+  score: number;
+  match_kind: "file" | "semantic" | "both";
+};
+
+/** Top merged PRs related to a file path (touched files + semantic search). */
+export async function postKgFileRelated(
+  owner: string,
+  name: string,
+  path: string
+): Promise<KgFileRelatedItem[]> {
+  const j = await postJSON<{ items?: KgFileRelatedItem[] }>(
+    `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/kg/file-related`,
+    { path }
+  );
+  return Array.isArray(j.items) ? j.items : [];
+}
+
 export async function fetchRepoIndex(
   owner: string,
   name: string,
@@ -722,6 +811,8 @@ export interface VoiceStatusResponse {
   agentReady: boolean;
   /** ElevenLabs agent + Gemini for client-tool voice Q&A */
   voiceChatGeminiReady?: boolean;
+  /** Browser mic + Gemini + TTS (no ConvAI agent tools required) */
+  browserVoiceQaReady?: boolean;
   /** ConvAI / LiveKit region — must match your ElevenLabs workspace */
   elevenlabsServerLocation?: string;
   ttsModel: string;
@@ -768,10 +859,17 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
   return new Blob([bytes], { type: mimeType });
 }
 
-export async function postVoiceTts(text: string, opts?: { locale?: "en" | "hi" }): Promise<VoiceTtsResult> {
+export async function postVoiceTts(
+  text: string,
+  opts?: { locale?: "en" | "hi"; skipTranslate?: boolean }
+): Promise<VoiceTtsResult> {
   const res = await apiFetch("/api/voice/tts", {
     method: "POST",
-    body: JSON.stringify({ text, locale: opts?.locale ?? "en" }),
+    body: JSON.stringify({
+      text,
+      locale: opts?.locale ?? "en",
+      ...(opts?.skipTranslate ? { skip_translate: true } : {}),
+    }),
   });
   if (!res.ok) {
     let msg = res.statusText;

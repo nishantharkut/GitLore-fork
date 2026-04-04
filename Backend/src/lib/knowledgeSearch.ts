@@ -51,24 +51,41 @@ export function dedupeByPr(nodes: ScoredNode[]): ScoredNode[] {
   return [...best.values()].sort((a, b) => b.score - a.score);
 }
 
+type LinkedIssueDoc = {
+  number: number;
+  title?: string;
+  url?: string;
+  body_excerpt?: string;
+};
+
 export function buildContextBlock(n: Record<string, unknown>): string {
   const quotes = (n.key_quotes as Array<{ author: string; text: string }>) || [];
   const alts = (n.alternatives as string[]) || [];
   const files = (n.changed_files as string[]) || [];
-  const linked =
-    (n.linked_issues as Array<{ number: number; title?: string; url?: string }>) || [];
+  const linked = (n.linked_issues as LinkedIssueDoc[]) || [];
   const linkedLines =
     linked.length > 0
-      ? linked.map((i) => `  - Issue #${i.number}: ${i.title || ""} → ${i.url || ""}`).join("\n")
+      ? linked
+          .map((i) => {
+            const ex = i.body_excerpt?.trim()
+              ? `\n    Issue context (excerpt): ${truncQuote(i.body_excerpt, 420)}`
+              : "";
+            return `  - Issue #${i.number}: ${i.title || ""} → ${i.url || ""}${ex}`;
+          })
+          .join("\n")
       : "  (none in index — re-run Build Knowledge Graph to refresh issue links)";
   const mc = n.merge_commit as { short?: string; url?: string } | null | undefined;
   const mergeLine = mc?.url
     ? `Merge commit: ${mc.short || ""} → ${mc.url}`
     : "(merge commit not stored for this PR — re-run ingest to link commits)";
-  const narrative = String(n.full_narrative || "").slice(0, 3200);
+  const narrative = String(n.full_narrative || "").slice(0, 4000);
   const topics = (n.topics as string[]) || [];
   const topicLine = topics.length ? topics.join(", ") : "(none)";
   const prUrl = String(n.pr_url || "");
+  const add = typeof n.additions === "number" ? n.additions : null;
+  const del = typeof n.deletions === "number" ? n.deletions : null;
+  const sizeLine =
+    add != null && del != null ? `Approx. diff size: +${add} / -${del} lines (from GitHub)` : "";
   const quoteBlock =
     quotes.length > 0
       ? quotes
@@ -92,11 +109,11 @@ ${quoteBlock}
 Impact: ${n.impact}
 Files changed: ${files.join(", ") || "unknown"}
 Merged at: ${n.merged_at || "unknown"}
-Consolidated narrative (excerpt): ${narrative || "(none)"}
+${sizeLine ? `${sizeLine}\n` : ""}Consolidated narrative (excerpt): ${narrative || "(none)"}
 ---`;
 }
 
-async function tryVectorSearchAtlas(
+export async function tryVectorSearchAtlas(
   db: Db,
   repoFull: string,
   queryVector: number[]
@@ -138,6 +155,8 @@ async function tryVectorSearchAtlas(
         linked_issues: 1,
         merge_commit: 1,
         pr_author: 1,
+        additions: 1,
+        deletions: 1,
       },
     },
   ];
@@ -154,7 +173,7 @@ async function tryVectorSearchAtlas(
     });
 }
 
-async function tryInMemoryVector(
+export async function tryInMemoryVector(
   db: Db,
   repoFull: string,
   queryVector: number[]
@@ -182,6 +201,8 @@ async function tryInMemoryVector(
       linked_issues: 1,
       merge_commit: 1,
       pr_author: 1,
+      additions: 1,
+      deletions: 1,
     })
     .limit(150)
     .toArray();
@@ -199,7 +220,7 @@ async function tryInMemoryVector(
   return scored.sort((a, b) => b.score - a.score).slice(0, 16);
 }
 
-async function tryTextSearch(db: Db, repoFull: string, question: string): Promise<ScoredNode[]> {
+export async function tryTextSearch(db: Db, repoFull: string, question: string): Promise<ScoredNode[]> {
   try {
     const arr = await db
       .collection("knowledge_nodes")
@@ -346,4 +367,75 @@ export async function runKnowledgeSearch(
   }
 
   return { tier, scored, embeddingFailed, queryVector };
+}
+
+/**
+ * Pull in additional PRs that share closing issues, ingest themes, or authors with the best matches.
+ */
+export async function expandRelatedNodes(
+  db: Db,
+  repoFull: string,
+  seeds: ScoredNode[],
+  maxExtra: number
+): Promise<ScoredNode[]> {
+  if (!seeds.length || maxExtra <= 0) return [];
+
+  const prNums = new Set<number>();
+  const issueNums = new Set<number>();
+  const topicSet = new Set<string>();
+  const authors = new Set<string>();
+
+  for (const s of seeds) {
+    prNums.add(s.doc.pr_number as number);
+    const li = (s.doc.linked_issues as LinkedIssueDoc[]) || [];
+    for (const i of li) {
+      if (Number.isFinite(i.number)) issueNums.add(i.number);
+    }
+    for (const t of (s.doc.topics as string[]) || []) {
+      const x = t.trim();
+      if (x) topicSet.add(x);
+    }
+    const a = String(s.doc.pr_author || "").trim();
+    if (a && a.toLowerCase() !== "unknown") authors.add(a);
+  }
+
+  const orClauses: Record<string, unknown>[] = [];
+  if (issueNums.size) orClauses.push({ "linked_issues.number": { $in: [...issueNums] } });
+  if (topicSet.size) orClauses.push({ topics: { $in: [...topicSet] } });
+  if (authors.size) orClauses.push({ pr_author: { $in: [...authors] } });
+  if (!orClauses.length) return [];
+
+  const candidates = await db
+    .collection("knowledge_nodes")
+    .find({
+      repo: repoFull,
+      pr_number: { $nin: [...prNums] },
+      $or: orClauses,
+    })
+    .project({ embedding: 0 })
+    .limit(140)
+    .toArray();
+
+  const seedTopicLower = [...topicSet].map((t) => t.toLowerCase());
+  const scoredExtra: ScoredNode[] = [];
+
+  for (const doc of candidates) {
+    const d = doc as Record<string, unknown>;
+    let bonus = 0;
+    const li = (d.linked_issues as LinkedIssueDoc[]) || [];
+    const liNums = new Set(li.map((x) => x.number));
+    for (const n of issueNums) {
+      if (liNums.has(n)) bonus += 2.5;
+    }
+    const tops = ((d.topics as string[]) || []).map((t) => t.toLowerCase());
+    for (const st of seedTopicLower) {
+      if (tops.some((t) => t === st || t.includes(st) || st.includes(t))) bonus += 1.2;
+    }
+    if (authors.has(String(d.pr_author || "").trim())) bonus += 0.85;
+    if (bonus <= 0) continue;
+    const synthetic = 0.28 + Math.min(bonus * 0.07, 0.55);
+    scoredExtra.push({ doc: d, score: synthetic });
+  }
+
+  return dedupeByPr(scoredExtra).slice(0, maxExtra);
 }
