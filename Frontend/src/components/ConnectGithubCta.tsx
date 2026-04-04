@@ -6,7 +6,7 @@ import { startGithubOAuth } from "@/lib/githubOAuth";
 type Props = {
   className?: string;
   children: ReactNode;
-  /** If true, signed-in users go to GitHub OAuth again (rare); default sends them to /app */
+  /** If true, signed-in users go to GitHub OAuth again (rare); default sends them to /overview */
   alwaysOAuth?: boolean;
 };
 
@@ -26,7 +26,7 @@ export function ConnectGithubCta({ className, children, alwaysOAuth }: Props) {
 
   if (user && !alwaysOAuth) {
     return (
-      <Link to="/app" className={className}>
+      <Link to="/overview" className={className}>
         {children}
       </Link>
     );

@@ -281,6 +281,9 @@ export type GithubRepoSummary = {
   private: boolean;
   pushedAt: string | null;
   htmlUrl: string;
+  description?: string | null;
+  language?: string | null;
+  stars?: number;
 };
 
 export async function fetchMyRepos(limit = 30): Promise<GithubRepoSummary[]> {

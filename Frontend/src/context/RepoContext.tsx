@@ -1,15 +1,5 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { fetchMyRepos } from "@/lib/gitloreApi";
 
 const STORAGE_KEY = "gitlore:target";
 
@@ -54,8 +44,6 @@ type RepoCtx = {
   target: RepoTarget;
   repoFull: string;
   repoReady: boolean;
-  /** True while resolving default repo after sign-in (no stored repo yet). */
-  repoResolving: boolean;
   setTarget: (t: Partial<RepoTarget>) => void;
   /** Replace entire target (e.g. pick from GitHub search). */
   selectRepository: (owner: string, name: string, defaultBranch: string) => void;
@@ -67,7 +55,6 @@ export function RepoProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const initial = loadStored();
   const [target, setTargetState] = useState<RepoTarget>(initial);
-  const [bootstrapDone, setBootstrapDone] = useState(() => !!(initial.owner && initial.name));
   const prevUserRef = useRef<typeof user>();
 
   useEffect(() => {
@@ -91,40 +78,9 @@ export function RepoProvider({ children }: { children: ReactNode }) {
       } catch {
         /* ignore */
       }
-      setBootstrapDone(false);
     }
     prevUserRef.current = user;
   }, [user, authLoading]);
-
-  useEffect(() => {
-    if (!user || authLoading) return;
-    if (target.owner && target.name) {
-      setBootstrapDone(true);
-      return;
-    }
-    let cancelled = false;
-    setBootstrapDone(false);
-    void (async () => {
-      try {
-        const list = await fetchMyRepos(1);
-        if (cancelled || !list.length) return;
-        const r = list[0];
-        setTargetState({
-          owner: r.owner,
-          name: r.name,
-          branch: r.defaultBranch,
-          filePath: "README.md",
-        });
-      } catch {
-        /* user may have no token scope or API error — leave target empty */
-      } finally {
-        if (!cancelled) setBootstrapDone(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, authLoading, target.owner, target.name]);
 
   const setTarget = useCallback((patch: Partial<RepoTarget>) => {
     setTargetState((prev) => ({ ...prev, ...patch }));
@@ -137,16 +93,14 @@ export function RepoProvider({ children }: { children: ReactNode }) {
       branch: defaultBranch || "main",
       filePath: "README.md",
     });
-    setBootstrapDone(true);
   }, []);
 
   const repoFull = target.owner && target.name ? `${target.owner}/${target.name}` : "";
   const repoReady = !!(target.owner && target.name);
-  const repoResolving = !!(user && !authLoading && !bootstrapDone);
 
   const value = useMemo(
-    () => ({ target, repoFull, repoReady, repoResolving, setTarget, selectRepository }),
-    [target, repoFull, repoReady, repoResolving, setTarget, selectRepository]
+    () => ({ target, repoFull, repoReady, setTarget, selectRepository }),
+    [target, repoFull, repoReady, setTarget, selectRepository]
   );
 
   return <RepoContext.Provider value={value}>{children}</RepoContext.Provider>;

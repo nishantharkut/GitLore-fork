@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import CodeMirror from "@uiw/react-codemirror";
-import { buildCmTheme, cmLanguageForPath, EditorView } from "@/lib/codemirrorAppTheme";
+import { cmExtensionsForPath, EditorView } from "@/lib/codemirrorAppTheme";
+import { useTheme } from "@/context/ThemeContext";
 
 export type AppViewCodeEditorProps = {
   value: string;
@@ -21,13 +22,13 @@ export default function AppViewCodeEditor({
   selectedLine,
   onLineActivate,
 }: AppViewCodeEditorProps) {
-  const cmTheme = useMemo(() => buildCmTheme(isMobile, mobileCodeWrap), [isMobile, mobileCodeWrap]);
+  const { theme: appTheme } = useTheme();
   const cmExtensions = useMemo(
     () => [
-      cmLanguageForPath(filePath || ""),
+      ...cmExtensionsForPath(filePath || "", isMobile, mobileCodeWrap, appTheme),
       ...(isMobile && mobileCodeWrap ? [EditorView.lineWrapping] : []),
     ],
-    [filePath, isMobile, mobileCodeWrap]
+    [filePath, isMobile, mobileCodeWrap, appTheme]
   );
 
   return (
@@ -47,9 +48,9 @@ export default function AppViewCodeEditor({
       )}
       <CodeMirror
         value={value}
-        key={`${filePath}-${isMobile ? `m-${mobileCodeWrap ? "wrap" : "nowrap"}` : "d"}`}
+        key={`${filePath}-${appTheme}-${isMobile ? `m-${mobileCodeWrap ? "wrap" : "nowrap"}` : "d"}`}
+        theme="none"
         extensions={cmExtensions}
-        theme={cmTheme}
         editable={false}
         basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: true, highlightActiveLineGutter: true }}
         onStatistics={(stats) => {

@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { Moon, Sun } from "lucide-react";
 import { GuardrailsModal } from "../GuardrailsModal";
 import { ConnectGithubCta } from "../ConnectGithubCta";
+import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 
 const LandingNavbar = () => {
+  const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navRef = useRef<HTMLElement>(null);
   const rafRef = useRef<number | null>(null);
   const [guardrailsOpen, setGuardrailsOpen] = useState(false);
@@ -35,11 +40,23 @@ const LandingNavbar = () => {
         ref={navRef}
         className="landing-nav fixed left-0 right-0 top-0 z-[100] flex h-[52px] items-center justify-between border-b border-transparent px-5 md:px-6"
       >
-        <Link to="/" className="font-heading text-[16px] font-medium tracking-tight text-[var(--accent)]">
+        <Link
+          to={user ? "/overview" : "/"}
+          className="font-heading text-[16px] font-medium tracking-tight text-[var(--accent)]"
+        >
           GitLore
         </Link>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => toggleTheme()}
+            className="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[6px] border border-[var(--border)] text-[var(--text-secondary)] transition-colors duration-200 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            title={theme === "dark" ? "Light theme" : "Dark theme"}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" aria-hidden /> : <Moon className="h-4 w-4" aria-hidden />}
+          </button>
           <button
             type="button"
             onClick={() => setGuardrailsOpen(true)}
@@ -48,8 +65,17 @@ const LandingNavbar = () => {
             Guardrails
           </button>
           <ConnectGithubCta className="nav-btn inline-flex h-[34px] items-center rounded-[6px] bg-[var(--accent)] px-4 font-heading text-[13px] font-medium text-white sm:px-4">
-            <span className="md:hidden">Connect</span>
-            <span className="hidden md:inline">Connect Repo</span>
+            {user ? (
+              <>
+                <span className="md:hidden">Dashboard</span>
+                <span className="hidden md:inline">Go to Dashboard</span>
+              </>
+            ) : (
+              <>
+                <span className="md:hidden">Connect</span>
+                <span className="hidden md:inline">Connect Repo</span>
+              </>
+            )}
           </ConnectGithubCta>
         </div>
       </nav>
