@@ -32,28 +32,12 @@ export interface InsightNarrative {
 
 export interface InsightExplanation {
   header: string;
-  /** Pattern title (same as header from API pattern_name) */
-  patternName?: string;
-  /** Human-readable issue description */
-  whatsWrong: string;
-  /** Left pane / buggy side (often from diff or whats_wrong) */
   buggyCode: string;
-  /** Suggested fix from model */
   fixedCode: string;
   why: string;
-  whyItMatters?: string;
   principle: string;
   link: string;
-  docsLinks: string[];
   confidence: "HIGH" | "MEDIUM" | "LOW";
-  confidenceReason?: string;
-  source?: {
-    commentBy: string;
-    commentUrl: string;
-    patternMatched: string | null;
-  };
-  /** PR number for footer line */
-  prNumber?: number;
 }
 
 const TIMELINE_COLORS = ["#E74C3C", "#C9A84C", "#F39C12", "#2ECC71"];
@@ -178,30 +162,15 @@ export function explanationFromApi(raw: Record<string, unknown>): InsightExplana
   const principle = (raw.principle as string) || "";
   const docs = raw.docs_links as string[] | undefined;
   const linkFromDocs = Array.isArray(docs) && docs[0] ? String(docs[0]).replace(/^https?:\/\//, "") : "";
-  const src = raw.source as
-    | { comment_by?: string; comment_url?: string; pattern_matched?: string | null }
-    | undefined;
 
   return {
     header: pattern,
-    patternName: pattern,
-    whatsWrong,
     buggyCode: whatsWrong || "(no snippet)",
     fixedCode: fix || "(no fix suggested)",
     why,
-    whyItMatters: why,
     principle: principle || "Code review",
     link: linkFromDocs || "developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
-    docsLinks: Array.isArray(docs) ? docs : [],
     confidence: confUpper(raw.confidence as string),
-    confidenceReason: (raw.confidence_reason as string) || "",
-    source: src
-      ? {
-          commentBy: src.comment_by || "",
-          commentUrl: src.comment_url || "",
-          patternMatched: src.pattern_matched ?? null,
-        }
-      : undefined,
   };
 }
 
@@ -246,10 +215,6 @@ export async function postJSON<T>(path: string, body: unknown): Promise<T> {
     throw new Error(msg);
   }
   return data as T;
-}
-
-export async function postNarrate(text: string): Promise<{ status?: string; message?: string }> {
-  return postJSON("/api/narrate", { text });
 }
 
 export async function analyzeLine(body: {
@@ -468,18 +433,6 @@ export async function fetchRepoPullRequests(
   return data.pulls || [];
 }
 
-export type PullDiffReviewRef = {
-  ref: string;
-  sha: string;
-};
-
-export type PullDiffReviewFile = {
-  filename: string;
-  status: string;
-  additions: number;
-  deletions: number;
-};
-
 export type PullDiffReviewResponse = {
   number: number;
   title: string;
@@ -487,9 +440,6 @@ export type PullDiffReviewResponse = {
   authorLogin: string | null;
   updatedAt: string;
   htmlUrl: string;
-  head: PullDiffReviewRef;
-  base: PullDiffReviewRef;
-  files: PullDiffReviewFile[];
   diff: string;
   comments: Array<{
     id: number;

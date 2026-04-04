@@ -1,5 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 
+import CodeMirror from "@uiw/react-codemirror";
+import { python } from "@codemirror/lang-python";
+import { javascript } from "@codemirror/lang-javascript";
+import { EditorView } from "@codemirror/view";
 import gsap from "gsap";
 import { animate as animeAnimate } from "animejs";
 import { Group, Panel, Separator, useDefaultLayout, useGroupRef } from "react-resizable-panels";
@@ -18,17 +22,10 @@ import {
   type InsightExplanation,
   type InsightNarrative,
   type RepoPullSummary,
-  type PullDiffReviewFile,
 } from "@/lib/gitloreApi";
 import { pathsToFileTree, type FileNode } from "@/lib/pathsToFileTree";
 import { parseUnifiedDiff, diffLinesToHunkString, type ParsedDiffLine } from "@/lib/parseUnifiedDiff";
-import { pathsMatchPrCommentFile } from "@/lib/repoPath";
-import { firstLineForPrFile } from "@/lib/prNavigation";
 import { startGithubOAuth } from "@/lib/githubOAuth";
-import { FeatureToggle, type ActiveFeature } from "@/components/shared/FeatureToggle";
-import { ExplanationView } from "@/components/panel/ExplanationView";
-import { PrReviewOverview } from "@/components/panel/PrReviewOverview";
-import { inlineCommentsExtension } from "@/components/editor/InlineComments";
 
 const StoryVoiceGate = lazy(() => import("@/components/StoryVoiceGate"));
 import { CodeEditorSkeleton, DiffLoadingBlock, Spinner } from "@/components/Skeleton";
@@ -60,12 +57,7 @@ type PanelContent =
   | { type: "idle" }
   | { type: "need-auth" }
   | { type: "error"; message: string }
-  | {
-      type: "explanation";
-      data: InsightExplanation;
-      diffHunk?: string | null;
-      prNumber?: number | null;
-    }
+  | { type: "explanation"; data: InsightExplanation }
   | { type: "narrative"; line: number; data: InsightNarrative };
 
 /* ─── Sub-components ─── */
@@ -203,13 +195,12 @@ const PRDropdown = ({
         </svg>
       </button>
       {open && pulls.length > 0 && (
-        <div className="absolute z-[100] mt-1 max-h-64 w-full overflow-y-auto rounded-sm border border-gitlore-border bg-gitlore-surface shadow-lg">
+        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-sm border border-gitlore-border bg-gitlore-surface">
           {pulls.map((pr) => (
             <button
               key={pr.number}
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={() => {
                 onSelect(pr.number);
                 setOpen(false);
               }}
@@ -273,8 +264,8 @@ const DiffViewer = ({
         {lines.map((line, i) => {
           const commentsOnLine = comments.filter((c) => {
             if (c.line == null || line.lineNum == null || c.line !== line.lineNum) return false;
-            if (!line.path) return true;
-            return pathsMatchPrCommentFile(c.path, line.path);
+            if (!line.path || !c.path) return true;
+            return c.path === line.path;
           });
           return (
             <div key={i} className="min-w-0">
@@ -687,6 +678,70 @@ const NarrativePanel = ({
   );
 };
 
+const SplitDiffView = ({ buggyCode, fixedCode }: { buggyCode: string; fixedCode: string }) => (
+  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+    <div className="min-w-0">
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-gitlore-error">Your code</div>
+      <pre className="overflow-x-auto whitespace-pre rounded-sm border border-gitlore-error/20 bg-[rgba(231,76,60,0.08)] p-3 font-code text-xs leading-5 text-gitlore-text">
+        {buggyCode}
+      </pre>
+    </div>
+    <div className="min-w-0">
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-gitlore-success">Fixed</div>
+      <pre className="overflow-x-auto whitespace-pre rounded-sm border border-gitlore-success/20 bg-[rgba(46,204,113,0.08)] p-3 font-code text-xs leading-5 text-gitlore-text">
+        {fixedCode}
+      </pre>
+    </div>
+  </div>
+);
+
+const ExplanationPanel = ({ explanation }: { explanation: InsightExplanation | null }) => {
+  if (!explanation) return null;
+  const confidenceColor =
+    explanation.confidence === "HIGH"
+      ? "text-gitlore-success"
+      : explanation.confidence === "MEDIUM"
+        ? "text-gitlore-warning"
+        : "text-gitlore-error";
+  const dotColor =
+    explanation.confidence === "HIGH"
+      ? "bg-gitlore-success"
+      : explanation.confidence === "MEDIUM"
+        ? "bg-gitlore-warning"
+        : "bg-gitlore-error";
+
+  return (
+    <div className="space-y-5 p-4 font-body md:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-base font-semibold leading-snug text-gitlore-accent">{explanation.header}</h3>
+        <span
+          className={`inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-gitlore-border px-2 py-0.5 text-xs font-medium ${confidenceColor}`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
+          {explanation.confidence}
+        </span>
+      </div>
+      <SplitDiffView buggyCode={explanation.buggyCode} fixedCode={explanation.fixedCode} />
+      <div>
+        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-gitlore-text-secondary">Why it matters</div>
+        <p className="text-sm leading-relaxed text-gitlore-text">{explanation.why}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-gitlore-text-secondary">Principle</span>
+        <span className="font-medium text-gitlore-text">{explanation.principle}</span>
+      </div>
+      <a
+        href={explanation.link.startsWith("http") ? explanation.link : `https://${explanation.link}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block break-all text-sm text-gitlore-text-secondary transition-colors hover:text-gitlore-accent"
+      >
+        {explanation.link} →
+      </a>
+    </div>
+  );
+};
+
 /* ─── Main ─── */
 type LeftTab = "diff" | "code";
 
@@ -716,17 +771,6 @@ const AppView = () => {
   const [reviewComments, setReviewComments] = useState<ReviewComment[]>([]);
   const [prDiffLoading, setPrDiffLoading] = useState(false);
   const [prDiffErr, setPrDiffErr] = useState<string | null>(null);
-  const [prHeadRef, setPrHeadRef] = useState<string | null>(null);
-  const [prChangedFiles, setPrChangedFiles] = useState<PullDiffReviewFile[]>([]);
-  const [prBundleMeta, setPrBundleMeta] = useState<{
-    number: number;
-    title: string;
-    state: string;
-    htmlUrl: string;
-    authorLogin: string | null;
-  } | null>(null);
-  const [pendingEditorScrollLine, setPendingEditorScrollLine] = useState<number | null>(null);
-  const [browseRepoExpanded, setBrowseRepoExpanded] = useState(true);
   const [explanationCommentId, setExplanationCommentId] = useState<number | null>(null);
   const [panel, setPanel] = useState<PanelContent>({ type: "idle" });
   const [insightLoading, setInsightLoading] = useState(false);
@@ -744,30 +788,6 @@ const AppView = () => {
   } | null>(null);
   /** Open narrative from navbar Decisions search after file content loads. */
   const [pendingDecisionOpen, setPendingDecisionOpen] = useState<{ file: string; line: number } | null>(null);
-  const [activeFeature, setActiveFeature] = useState<ActiveFeature>("archaeology");
-  const panelContentDesktopRef = useRef<HTMLDivElement>(null);
-  const panelContentMobileRef = useRef<HTMLDivElement>(null);
-  const prevFeatRef = useRef<ActiveFeature | null>(null);
-
-  const effectiveFileRef = useMemo(() => {
-    if (activeFeature !== "review") return target.branch;
-    if (
-      selectedPrNumber == null ||
-      prDiffLoading ||
-      prDiffErr ||
-      !prHeadRef
-    ) {
-      return target.branch;
-    }
-    return prHeadRef;
-  }, [
-    activeFeature,
-    selectedPrNumber,
-    prDiffLoading,
-    prDiffErr,
-    prHeadRef,
-    target.branch,
-  ]);
 
   useEffect(() => {
     const t = panel.type;
@@ -780,55 +800,12 @@ const AppView = () => {
     setExplanationCommentId(null);
   }, [selectedPrNumber]);
 
-  /** Feature toggle: fade panel and reset without re-sliding the column. */
-  useEffect(() => {
-    if (prevFeatRef.current === null) {
-      prevFeatRef.current = activeFeature;
-      return;
-    }
-    if (prevFeatRef.current === activeFeature) return;
-    prevFeatRef.current = activeFeature;
-    const els = [panelContentDesktopRef.current, panelContentMobileRef.current].filter(
-      Boolean
-    ) as HTMLDivElement[];
-    const reset = () => {
-      setPanel({ type: "idle" });
-      setInsightLoading(false);
-      setExplanationCommentId(null);
-    };
-    if (els.length) {
-      gsap.to(els, {
-        opacity: 0,
-        duration: 0.15,
-        onComplete: () => {
-          reset();
-          gsap.to(els, { opacity: 1, duration: 0.15 });
-        },
-      });
-    } else {
-      reset();
-    }
-  }, [activeFeature]);
-
-  const onSelectPrFile = useCallback(
-    (path: string) => {
-      if (!path.trim()) return;
-      const line = firstLineForPrFile(path, reviewComments, diffLines);
-      setTarget({ filePath: path });
-      setPendingEditorScrollLine(line);
-    },
-    [setTarget, reviewComments, diffLines]
-  );
-
-  const onSelectFileTreeOnly = useCallback(
+  const onSelectFile = useCallback(
     (path: string) => {
       setTarget({ filePath: path });
-      setPendingEditorScrollLine(null);
     },
     [setTarget]
   );
-
-  const clearPendingEditorScroll = useCallback(() => setPendingEditorScrollLine(null), []);
 
   useEffect(() => {
     const st = location.state as { file?: string; analyzeLine?: number } | null;
@@ -914,17 +891,11 @@ const AppView = () => {
       setReviewComments([]);
       setPrDiffErr(null);
       setPrDiffLoading(false);
-      setPrHeadRef(null);
-      setPrChangedFiles([]);
-      setPrBundleMeta(null);
       return;
     }
     let cancelled = false;
     setPrDiffLoading(true);
     setPrDiffErr(null);
-    setPrHeadRef(null);
-    setPrChangedFiles([]);
-    setPrBundleMeta(null);
     void fetchPullDiffReview(target.owner, target.name, selectedPrNumber)
       .then((bundle) => {
         if (cancelled) return;
@@ -940,25 +911,11 @@ const AppView = () => {
             diff_hunk: c.diff_hunk,
           }))
         );
-        setPrHeadRef(bundle.head.sha);
-        setPrChangedFiles(
-          [...bundle.files].sort((a, b) => a.filename.localeCompare(b.filename))
-        );
-        setPrBundleMeta({
-          number: bundle.number,
-          title: bundle.title,
-          state: bundle.state,
-          htmlUrl: bundle.htmlUrl,
-          authorLogin: bundle.authorLogin,
-        });
       })
       .catch((e) => {
         if (!cancelled) {
           setDiffLines([]);
           setReviewComments([]);
-          setPrHeadRef(null);
-          setPrChangedFiles([]);
-          setPrBundleMeta(null);
           setPrDiffErr(e instanceof Error ? e.message : "Failed to load PR diff");
         }
       })
@@ -1003,7 +960,7 @@ const AppView = () => {
     }
     let cancelled = false;
     setFileLoading(true);
-    void fetchRepoFileRaw(target.owner, target.name, target.filePath, effectiveFileRef)
+    void fetchRepoFileRaw(target.owner, target.name, target.filePath, target.branch)
       .then((r) => {
         if (cancelled) return;
         if (r.isBinary) {
@@ -1021,7 +978,7 @@ const AppView = () => {
     return () => {
       cancelled = true;
     };
-  }, [user, repoReady, target.owner, target.name, target.filePath, effectiveFileRef]);
+  }, [user, repoReady, target.owner, target.name, target.filePath, target.branch]);
 
   const desktopPanelRef = useRef<HTMLDivElement>(null);
   const mobilePanelRef = useRef<HTMLDivElement>(null);
@@ -1073,10 +1030,6 @@ const AppView = () => {
         return;
       }
       if (selectedPrNumber == null) return;
-      if (comment.path?.trim() && !pathsMatchPrCommentFile(comment.path, target.filePath)) {
-        setTarget({ filePath: comment.path });
-      }
-      setPendingEditorScrollLine(comment.line ?? 1);
       const lineNo = comment.line ?? 1;
       setPanelOpen(true);
       setInsightLoading(true);
@@ -1094,90 +1047,18 @@ const AppView = () => {
           pr_number: selectedPrNumber,
         });
         setExplanationCommentId(comment.id);
-        setPanel({
-          type: "explanation",
-          data: { ...data, prNumber: selectedPrNumber ?? undefined },
-          diffHunk: comment.diff_hunk,
-          prNumber: selectedPrNumber,
-        });
+        setPanel({ type: "explanation", data });
       } catch (e) {
         setPanel({ type: "error", message: e instanceof Error ? e.message : "Explain request failed" });
       } finally {
         setInsightLoading(false);
       }
     },
-    [user, repoFull, selectedPrNumber, target.filePath, diffLines, setTarget]
+    [user, repoFull, selectedPrNumber, target.filePath, diffLines]
   );
-
-  const inlineCommentRows = useMemo(
-    () =>
-      reviewComments
-        .filter((c) => pathsMatchPrCommentFile(c.path, target.filePath) && c.line != null)
-        .map((c) => ({
-          id: String(c.id),
-          line: c.line!,
-          body: c.text,
-          author: c.author,
-          url:
-            selectedPrNumber != null
-              ? `https://github.com/${target.owner}/${target.name}/pull/${selectedPrNumber}#discussion_r${c.id}`
-              : "",
-          diff_hunk: c.diff_hunk ?? "",
-        })),
-    [reviewComments, target.filePath, target.owner, target.name, selectedPrNumber]
-  );
-
-  const cmInlineExtensions = useMemo(
-    () =>
-      inlineCommentsExtension(
-        inlineCommentRows,
-        activeFeature === "review",
-        (badge) => {
-          const c = reviewComments.find((x) => String(x.id) === badge.id);
-          if (c) void handleCommentClick(c);
-        }
-      ),
-    [inlineCommentRows, activeFeature, reviewComments, handleCommentClick]
-  );
-
-  /** Visible feedback when PR changes / comments load (Review Comments mode). */
-  const reviewPrStatusBanner =
-    activeFeature === "review" && leftTab === "code" ? (
-      <div className="shrink-0 border-b border-gitlore-border bg-gitlore-surface/95 px-3 py-2 text-[11px] text-gitlore-text-secondary md:text-xs">
-        {selectedPrNumber == null && (
-          <span>Select a pull request in the sidebar to load review comments.</span>
-        )}
-        {selectedPrNumber != null && prDiffLoading && <span>Loading PR #{selectedPrNumber}…</span>}
-        {selectedPrNumber != null && !prDiffLoading && prDiffErr && (
-          <span className="text-gitlore-error">
-            Could not load PR #{selectedPrNumber}: {prDiffErr}
-          </span>
-        )}
-        {selectedPrNumber != null && !prDiffLoading && !prDiffErr && (
-          <div className="space-y-1">
-            <span className="block truncate">
-              PR #{selectedPrNumber} · {reviewComments.length} review comment
-              {reviewComments.length === 1 ? "" : "s"}
-              {inlineCommentRows.length > 0 && ` · ${inlineCommentRows.length} on this file`}
-            </span>
-            {reviewComments.length === 0 && (
-              <span className="block text-gitlore-text-secondary/90">
-                No inline review comments on this pull request.
-              </span>
-            )}
-            {reviewComments.length > 0 && inlineCommentRows.length === 0 && (
-              <span className="block text-gitlore-text-secondary/90">
-                No comments on the current file in this PR. Use &quot;Changed in this PR&quot; in the sidebar, browse the tree, or open the Diff tab.
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    ) : null;
 
   const handleLineClickAnime = useCallback(
     async (lineNum: number, el?: HTMLElement) => {
-      if (activeFeature !== "archaeology") return;
       if (el) {
         animeAnimate(el, {
           backgroundColor: ["rgba(201,168,76,0)", "rgba(201,168,76,0.15)", "rgba(201,168,76,0.05)"],
@@ -1208,7 +1089,7 @@ const AppView = () => {
         setInsightLoading(false);
       }
     },
-    [user, repoFull, target.filePath, target.branch, activeFeature]
+    [user, repoFull, target.filePath, target.branch]
   );
 
   const handleDiffLineClick = useCallback((lineNum: number, el: HTMLElement) => {
@@ -1245,13 +1126,7 @@ const AppView = () => {
         <p className="text-sm leading-relaxed text-gitlore-error">{panel.message}</p>
       </div>
     ) : panel.type === "explanation" ? (
-      <ExplanationView
-        data={panel.data}
-        loading={false}
-        error={null}
-        diffHunk={panel.diffHunk}
-        prNumber={panel.prNumber}
-      />
+      <ExplanationPanel explanation={panel.data} />
     ) : panel.type === "narrative" ? (
       <NarrativePanel
         narrative={panel.data}
@@ -1265,30 +1140,12 @@ const AppView = () => {
           setStoryVoiceOpen(true);
         }}
       />
-    ) : panel.type === "idle" && activeFeature === "review" && user ? (
-      <PrReviewOverview
-        meta={prBundleMeta}
-        changedFiles={prChangedFiles}
-        comments={reviewComments.map((c) => ({
-          id: c.id,
-          path: c.path,
-          line: c.line,
-          text: c.text,
-          author: c.author,
-        }))}
-        loading={selectedPrNumber != null && prDiffLoading}
-        error={prDiffErr}
-        onCommentClick={(c) => {
-          const rc = reviewComments.find((x) => x.id === c.id);
-          if (rc) void handleCommentClick(rc);
-        }}
-      />
     ) : (
       <div className="flex h-full items-center justify-center p-8">
         <p className="text-center font-body text-sm leading-relaxed text-gitlore-text-secondary">
-          {activeFeature === "archaeology"
+          {leftTab === "code"
             ? "Click a line to analyze the configured file path with Git blame (see bar above)."
-            : "Sign in with GitHub to load pull requests and review comments in this panel."}
+            : "Click a review comment to get an AI explanation via the API."}
         </p>
       </div>
     );
@@ -1326,10 +1183,6 @@ const AppView = () => {
         fileLoading={fileLoading}
         selectedLine={selectedLine}
         onLineActivate={(line) => void handleLineClickAnime(line)}
-        extraExtensions={cmInlineExtensions}
-        enableLineHistory={activeFeature === "archaeology"}
-        scrollToLine={pendingEditorScrollLine}
-        onScrolledToLine={clearPendingEditorScroll}
       />
     </Suspense>
   );
@@ -1353,9 +1206,6 @@ const AppView = () => {
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      <div className="px-4 pb-2">
-        <FeatureToggle activeFeature={activeFeature} onToggle={setActiveFeature} />
-      </div>
       {mobileTreeOpen && (
         <div className="space-y-3 border-t border-gitlore-border px-3 pb-3 pt-2">
           <div>
@@ -1369,74 +1219,25 @@ const AppView = () => {
             />
           </div>
           <div>
-            {activeFeature === "review" && selectedPrNumber != null && (
-              <div className="mb-3">
-                <div className="mb-2 px-1 font-code text-[10px] font-medium uppercase tracking-wider text-gitlore-text-secondary">
-                  Changed in this PR
-                </div>
-                {prDiffLoading && (
-                  <p className="flex items-center gap-2 px-2 py-1 text-xs text-gitlore-text-secondary" role="status">
-                    <Spinner className="h-3.5 w-3.5" label="Loading PR files" />
-                    Loading…
-                  </p>
-                )}
-                {!prDiffLoading && prDiffErr && (
-                  <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{prDiffErr}</p>
-                )}
-                {!prDiffLoading &&
-                  !prDiffErr &&
-                  prChangedFiles.map((f) => (
-                    <button
-                      key={f.filename}
-                      type="button"
-                      onClick={() => onSelectPrFile(f.filename)}
-                      className={`mb-0.5 w-full rounded-sm px-2 py-1.5 text-left font-code text-[11px] ${
-                        pathsMatchPrCommentFile(f.filename, target.filePath)
-                          ? "bg-gitlore-accent/15 text-gitlore-accent"
-                          : "text-gitlore-text hover:bg-gitlore-surface-hover"
-                      }`}
-                    >
-                      <span className="block truncate">{f.filename}</span>
-                      <span className="mt-0.5 block text-[10px] text-gitlore-text-secondary">
-                        {f.status}
-                        {f.additions + f.deletions > 0 ? ` · +${f.additions} −${f.deletions}` : ""}
-                      </span>
-                    </button>
-                  ))}
-              </div>
+            <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 px-1 font-medium">Files</div>
+            {treeError && (
+              <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{treeError}</p>
             )}
-            {activeFeature === "review" && (
-              <button
-                type="button"
-                onClick={() => setBrowseRepoExpanded((v) => !v)}
-                className="mb-2 w-full rounded-sm border border-gitlore-border/80 px-2 py-1.5 text-left font-code text-[10px] text-gitlore-text-secondary"
-              >
-                {browseRepoExpanded ? "Hide repository tree" : "Show repository tree"}
-              </button>
+            {treeLoading && (
+              <p className="flex items-center gap-2 px-2 py-1 text-xs text-gitlore-text-secondary" role="status">
+                <Spinner className="h-3.5 w-3.5" label="Loading file tree" />
+                Loading tree…
+              </p>
             )}
-            {(activeFeature === "archaeology" || browseRepoExpanded) && (
-              <>
-                <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 px-1 font-medium">Files</div>
-                {treeError && (
-                  <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{treeError}</p>
-                )}
-                {treeLoading && (
-                  <p className="flex items-center gap-2 px-2 py-1 text-xs text-gitlore-text-secondary" role="status">
-                    <Spinner className="h-3.5 w-3.5" label="Loading file tree" />
-                    Loading tree…
-                  </p>
-                )}
-                {!treeLoading &&
-                  fileTree.map((node) => (
-                    <FileTreeNode
-                      key={node.name}
-                      node={node}
-                      selectedPath={target.filePath}
-                      onSelectFile={onSelectFileTreeOnly}
-                    />
-                  ))}
-              </>
-            )}
+            {!treeLoading &&
+              fileTree.map((node) => (
+                <FileTreeNode
+                  key={node.name}
+                  node={node}
+                  selectedPath={target.filePath}
+                  onSelectFile={onSelectFile}
+                />
+              ))}
           </div>
         </div>
       )}
@@ -1509,8 +1310,8 @@ const AppView = () => {
   );
 
   const fileTreeAside = (
-    <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-gitlore-surface md:border-r md:border-gitlore-border">
-      <div className="relative z-30 shrink-0 border-b border-gitlore-border bg-gitlore-surface p-3">
+    <aside className="flex h-full w-full flex-col overflow-auto bg-gitlore-surface md:border-r md:border-gitlore-border">
+      <div className="p-3 border-b border-gitlore-border">
         <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 font-medium md:max-lg:text-[11px]">Pull Request</div>
         <PRDropdown
           pulls={pulls}
@@ -1520,80 +1321,26 @@ const AppView = () => {
           emptyHint="No PRs in this repo"
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2">
-        {activeFeature === "review" && selectedPrNumber != null && (
-          <div className="mb-3">
-            <div className="mb-2 px-2 font-code text-[10px] font-medium uppercase tracking-wider text-gitlore-text-secondary md:max-lg:text-[11px]">
-              Changed in this PR
-            </div>
-            {prDiffLoading && (
-              <p className="flex items-center gap-2 px-2 py-1 text-xs text-gitlore-text-secondary" role="status">
-                <Spinner className="h-3.5 w-3.5" label="Loading PR files" />
-                Loading…
-              </p>
-            )}
-            {!prDiffLoading && prDiffErr && (
-              <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{prDiffErr}</p>
-            )}
-            {!prDiffLoading && !prDiffErr &&
-              prChangedFiles.map((f) => (
-                <button
-                  key={f.filename}
-                  type="button"
-                  onClick={() => onSelectPrFile(f.filename)}
-                  className={`mb-0.5 w-full rounded-sm px-2 py-1.5 text-left font-code text-[11px] transition-colors md:text-xs ${
-                    pathsMatchPrCommentFile(f.filename, target.filePath)
-                      ? "bg-gitlore-accent/15 text-gitlore-accent"
-                      : "text-gitlore-text hover:bg-gitlore-surface-hover"
-                  }`}
-                >
-                  <span className="block truncate" title={f.filename}>
-                    {f.filename}
-                  </span>
-                  <span className="mt-0.5 block text-[10px] text-gitlore-text-secondary">
-                    {f.status}
-                    {f.additions + f.deletions > 0
-                      ? ` · +${f.additions} −${f.deletions}`
-                      : ""}
-                  </span>
-                </button>
-              ))}
-          </div>
+      <div className="p-2">
+        <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 px-2 font-medium md:max-lg:text-[11px]">Files</div>
+        {treeError && (
+          <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{treeError}</p>
         )}
-        {activeFeature === "review" && (
-          <button
-            type="button"
-            onClick={() => setBrowseRepoExpanded((v) => !v)}
-            className="mb-2 w-full rounded-sm border border-gitlore-border/80 px-2 py-1.5 text-left font-code text-[10px] text-gitlore-text-secondary transition-colors hover:bg-gitlore-surface-hover md:text-[11px]"
-          >
-            {browseRepoExpanded ? "Hide repository tree" : "Show repository tree"}
-          </button>
+        {treeLoading && (
+          <p className="flex items-center gap-2 px-2 py-1 text-xs text-gitlore-text-secondary" role="status">
+            <Spinner className="h-3.5 w-3.5" label="Loading file tree" />
+            Loading tree…
+          </p>
         )}
-        {(activeFeature === "archaeology" || browseRepoExpanded) && (
-          <>
-            <div className="text-xs text-gitlore-text-secondary uppercase tracking-wider mb-2 px-2 font-medium md:max-lg:text-[11px]">
-              Files
-            </div>
-            {treeError && (
-              <p className="px-2 py-1 font-code text-[11px] text-gitlore-error">{treeError}</p>
-            )}
-            {treeLoading && (
-              <p className="flex items-center gap-2 px-2 py-1 text-xs text-gitlore-text-secondary" role="status">
-                <Spinner className="h-3.5 w-3.5" label="Loading file tree" />
-                Loading tree…
-              </p>
-            )}
-            {!treeLoading &&
-              fileTree.map((node) => (
-                <FileTreeNode
-                  key={node.name}
-                  node={node}
-                  selectedPath={target.filePath}
-                  onSelectFile={onSelectFileTreeOnly}
-                />
-              ))}
-          </>
-        )}
+        {!treeLoading &&
+          fileTree.map((node) => (
+            <FileTreeNode
+              key={node.name}
+              node={node}
+              selectedPath={target.filePath}
+              onSelectFile={onSelectFile}
+            />
+          ))}
       </div>
     </aside>
   );
@@ -1613,7 +1360,6 @@ const AppView = () => {
   };
 
   const repoTargetBar = (
-    <>
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gitlore-border bg-gitlore-surface px-3 py-2 text-[11px] md:text-xs">
       <span className="font-medium text-gitlore-text-secondary">Blame / analyze target</span>
       <input
@@ -1654,10 +1400,6 @@ const AppView = () => {
       </button>
       {repoCheckMsg && <span className="font-code text-gitlore-text-secondary">{repoCheckMsg}</span>}
     </div>
-    <div className="flex shrink-0 items-center gap-3 border-b border-gitlore-border bg-gitlore-surface px-3 py-2">
-      <FeatureToggle activeFeature={activeFeature} onToggle={setActiveFeature} />
-    </div>
-    </>
   );
 
   const authBanner =
@@ -1738,7 +1480,6 @@ const AppView = () => {
                     </div>
                   </div>
                 </div>
-                {reviewPrStatusBanner}
                 <div className="min-h-0 flex-1 overflow-auto">
                   {codeEditor}
                 </div>
@@ -1788,16 +1529,14 @@ const AppView = () => {
                   {tabBar({ showResetLayout: true })}
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gitlore-code">
                     {leftTab === "code" ? (
-                      <>
-                        {reviewPrStatusBanner}
-                        <Group
-                          className="min-h-0 flex-1 w-full"
-                          orientation="horizontal"
-                          id="gitlore-app-blame"
-                          defaultLayout={blameLayout.defaultLayout}
-                          onLayoutChanged={blameLayout.onLayoutChanged}
-                          groupRef={blameGroupRef}
-                        >
+                      <Group
+                        className="h-full min-h-0 w-full"
+                        orientation="horizontal"
+                        id="gitlore-app-blame"
+                        defaultLayout={blameLayout.defaultLayout}
+                        onLayoutChanged={blameLayout.onLayoutChanged}
+                        groupRef={blameGroupRef}
+                      >
                         <Panel id="blame" defaultSize="15%" minSize="11%" maxSize="34%" className="min-h-0 min-w-0">
                           <div className="flex h-full min-h-0 select-none flex-col overflow-hidden border-r border-gitlore-border bg-gitlore-code">
                             {blameColumn}
@@ -1808,7 +1547,6 @@ const AppView = () => {
                           <div className="h-full min-h-0 min-w-0 overflow-auto bg-gitlore-code">{codeEditor}</div>
                         </Panel>
                       </Group>
-                      </>
                     ) : (
                       <div className="min-h-0 flex-1 overflow-auto">
                         <div className="w-full min-w-0 p-3 md:p-4">
@@ -1836,9 +1574,7 @@ const AppView = () => {
                   ref={desktopPanelRef}
                   className="h-full overflow-auto border-l border-gitlore-border bg-gitlore-surface"
                 >
-                  <div ref={panelContentDesktopRef} className="panel-content h-full min-h-0">
-                    {panelUI}
-                  </div>
+                  {panelUI}
                 </div>
               </Panel>
             </Group>
@@ -1861,11 +1597,7 @@ const AppView = () => {
             <div className="flex shrink-0 justify-center pt-3 pb-2">
               <div className="h-1 w-10 shrink-0 rounded-full bg-[#2A2A3A]" />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              <div ref={panelContentMobileRef} className="panel-content h-full min-h-0">
-                {panelUI}
-              </div>
-            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{panelUI}</div>
           </div>
         </div>
       )}

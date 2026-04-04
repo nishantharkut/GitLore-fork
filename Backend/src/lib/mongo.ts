@@ -1,4 +1,4 @@
-import { MongoClient, Db, ObjectId, type Document } from "mongodb";
+import { MongoClient, Db, ObjectId } from "mongodb";
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -100,18 +100,6 @@ export function getDB(): Db {
     throw new Error("Database not connected. Call connectDB() first.");
   }
   return db;
-}
-
-/** Match first comment_patterns doc whose trigger_keywords intersect keyword list. */
-export async function findPattern(
-  keywords: string[]
-): Promise<Document | null> {
-  const normalized = keywords.map((k) => k.toLowerCase()).filter(Boolean);
-  if (!normalized.length) return null;
-  const database = getDB();
-  return database.collection("comment_patterns").findOne({
-    trigger_keywords: { $in: normalized },
-  });
 }
 
 export async function disconnectDB(): Promise<void> {

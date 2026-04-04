@@ -13,8 +13,7 @@
     "test:full": "node test-full.js",
     "build": "tsc",
     "start": "node dist/server.js",
-    "type-check": "tsc --noEmit",
-    "seed": "tsx src/scripts/seed-patterns.ts"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "dotenv": "^16.3.1",

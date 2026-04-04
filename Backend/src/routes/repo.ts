@@ -19,7 +19,6 @@ import {
   listPullRequestsRest,
   getPullRequestDiffRest,
   listPullRequestReviewCommentsRest,
-  listPullRequestFilesRest,
   getPullRequestRest,
   fetchRepositoryMetadataRest,
   searchRepoCountRest,
@@ -367,11 +366,10 @@ repoRouter.get("/repo/:owner/:name/pulls/:number/diff-review", async (c) => {
       return c.json({ error: "Invalid parameters" }, 400);
     }
 
-    const [detail, diff, comments, files] = await Promise.all([
+    const [detail, diff, comments] = await Promise.all([
       getPullRequestRest(user.access_token, owner, name, pullNumber),
       getPullRequestDiffRest(user.access_token, owner, name, pullNumber),
       listPullRequestReviewCommentsRest(user.access_token, owner, name, pullNumber),
-      listPullRequestFilesRest(user.access_token, owner, name, pullNumber),
     ]);
 
     return c.json({
@@ -381,35 +379,15 @@ repoRouter.get("/repo/:owner/:name/pulls/:number/diff-review", async (c) => {
       authorLogin: detail.user?.login || null,
       updatedAt: detail.updated_at,
       htmlUrl: detail.html_url,
-      head: { ref: detail.head.ref, sha: detail.head.sha },
-      base: { ref: detail.base.ref, sha: detail.base.sha },
-      files: files.map((f) => ({
-        filename: f.filename,
-        status: f.status,
-        additions: f.additions,
-        deletions: f.deletions,
-      })),
       diff,
-      comments: comments.map((x) => {
-        const raw = x as {
-          line?: number | null;
-          original_line?: number | null;
-          start_line?: number | null;
-        };
-        const line =
-          raw.line ??
-          raw.start_line ??
-          raw.original_line ??
-          null;
-        return {
-          id: x.id,
-          path: x.path,
-          line,
-          body: x.body,
-          author: x.user?.login || "unknown",
-          diff_hunk: x.diff_hunk,
-        };
-      }),
+      comments: comments.map((x) => ({
+        id: x.id,
+        path: x.path,
+        line: x.line,
+        body: x.body,
+        author: x.user?.login || "unknown",
+        diff_hunk: x.diff_hunk,
+      })),
     });
   } catch (error) {
     console.error("diff-review error:", error);
