@@ -1,233 +1,279 @@
-# GitLore
+<h1 align="center">GitLore</h1>
+<p align="center"><strong>Your codebase's institutional memory.</strong></p>
+<p align="center">GitLore turns your GitHub PR history into a searchable Knowledge Graph — every decision your team ever made, findable in seconds. Search it. Chat with it. Get cited answers. Works on the web, on GitHub via Chrome Extension, and in your CI via PR Intelligence webhooks.</p>
+<p align="center"><em>Built at HackByte 4.0 — IIITDM Jabalpur, April 2026</em></p>
 
-GitLore helps developers understand a codebase through **git history**, **pull requests**, and **review context**. It combines a React frontend with a Node (Hono) backend, **MongoDB** for storage, **GitHub OAuth** for sign-in, and optional **Google Gemini** for narratives, explanations, and **knowledge-graph Q&A**.
+---
+
+## The Problem
+
+Your team has made hundreds of decisions across merged PRs — architecture choices, rejected alternatives, tradeoffs. But when a new developer asks "why do we use Redis here?", the answer is buried in PR #247 from 18 months ago.
+
+**git blame** tells you WHO. **Copilot** tells you WHAT. **Nobody tells you WHY.** GitLore does.
 
 ---
 
 ## Features
 
-- **GitHub sign-in** — Session-based auth; the API acts on behalf of the logged-in user’s token (where applicable).
-- **Code insights** — Explore repositories in the app: narratives tied to history, search, analysis, and review-style explanations (Gemini-backed where configured).
-- **Knowledge graph (per repo)** — Ingest **merged PRs** into structured **knowledge nodes** (decision, problem, quotes, issues, embeddings). Visualize relationships and run **chat** grounded in retrieved nodes.
-- **Retrieval + chat** — Chat uses a **three-tier** search (Atlas **vector** search when configured, MongoDB **full-text**, then **regex** fallback), optional **in-memory** vector similarity, then **Gemini** synthesis with strict “nodes-only” instructions. Automatic **429** retries and **model fallbacks** for free-tier quotas.
+**Core**
+- **Knowledge Graph** — PR ingest, Gemini extraction, vector embeddings, 3-tier semantic search
+- **Chat** — natural language questions, cited answers with PR references
+- **Code Archaeology** — click any line, see full decision story from git history
+- **Review Explainer** — pattern, fix, confidence for terse comments
+
+**Automation**
+- **PR Intelligence** — CodeRabbit-style: enable once, every new PR auto-commented with duplicate detection + KG context, posted as bot
+- **Auto-Fix Reviews** — classify + fix trivial comments (extract → rule → AI), raise draft PR
+- **SuperPlane** — event-driven Slack notifications for review explanations + KG updates
+
+**Platform**
+- **Chrome Extension** — floating chat button on GitHub, side panel, chat with KG without leaving GitHub
+- **Voice** — English + Hindi TTS (ElevenLabs), WebRTC voice agent for hands-free Q&A
+- **ArmorIQ Enforcement** — 18 tool actions, policy-based allow/deny, enforcement logging
+- **Knowledge Suggestions** — zero-click related decisions while browsing files
+- **Patterns** — static + repo-scanned anti-patterns with severity and category
+- **Decision Search** — semantic search across all indexed decisions from navbar
+- **KG Visualization** — interactive graph with node types, edge types, zoom, fullscreen
+- **Repo Overview Dashboard** — health score, top anti-patterns, most changed files, stats
 
 ---
 
-## Tech stack
+## Tech Stack
 
 | Layer | Stack |
-|--------|--------|
-| Frontend | React 18, Vite 5, TypeScript, Tailwind CSS, TanStack Query, CodeMirror |
-| Backend | Node 18+, Hono 4, TypeScript, MongoDB driver, Octokit GraphQL, Google Generative AI |
-| Data | MongoDB (`gitlore` database): users, caches, `knowledge_nodes`, `knowledge_progress`, etc. |
+|-------|-------|
+| **Frontend** | React, TypeScript, Tailwind, CodeMirror, GSAP, anime.js, react-markdown |
+| **Backend** | Hono, Node.js, TypeScript, Zod |
+| **AI/ML** | Gemini 2.5 Flash + Flash-Lite, text-embedding-004 (768-dim vectors) |
+| **Database** | MongoDB Atlas + Atlas Vector Search |
+| **APIs** | GitHub GraphQL + REST + OAuth + Webhooks, ElevenLabs TTS + Voice Agent |
+| **Security** | ArmorIQ (intent enforcement) |
+| **Automation** | SuperPlane (event-driven workflows) |
+| **Deployment** | Vercel (frontend), Vultr (backend + services) |
+| **Extension** | Chrome Extension (Manifest V3, side panel, service worker) |
 
 ---
 
-## Repository layout
+## Architecture
+
+```
+User Layer:  Browser  |  Chrome Extension  |  GitHub Webhook  |  Voice Agent
+                ↓               ↓                   ↓                ↓
+Frontend:    React + TypeScript + Tailwind (Vercel)
+             Overview | AppView | Chat | KG Viz | Voice | Patterns
+                                    ↓
+Backend:     Hono + Node.js + TypeScript (Vultr) — 35+ endpoints
+             Auth | Analyze | Explain | Search | Chat | Ingest | Voice
+             Webhook (PR Intel) | AutoFix | Enforcement
+             gemini.ts | knowledgeSearch.ts | ingest.ts | githubApp.ts
+             Middleware: Cookie + API Key Auth | CORS | Webhook Signature | Zod
+                                    ↓
+External:    Gemini 2.5 Flash | MongoDB Atlas | GitHub API | ElevenLabs | ArmorIQ
+                                    ↓
+Deployment:  Vercel (Frontend) | Vultr Cloud (Backend) | MongoDB Atlas M0
+```
+
+**Data Flow Pipelines:**
+- **KG Ingest**: GitHub GraphQL → Gemini Extract → Embed → MongoDB
+- **Chat Query**: Question → Embed → 3-Tier Search → Gemini Synthesis
+- **Code Archaeology**: Line Click → Blame → Commit → PR → Reviews → Narrative
+- **PR Intelligence**: PR Opened → File Overlap + KG Search → Auto-Comment
+- **Auto-Fix**: Classify → Extract/Rule/AI Fix → Validate → Draft PR
+- **Voice**: TTS (EN/HI) + WebRTC Agent + Gemini Q&A
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js >= 18
+- MongoDB Atlas account (free M0 tier works)
+- GitHub OAuth App
+- Gemini API key
+
+### 1. Clone and Install
+
+```bash
+git clone https://github.com/Codealpha07/GitLore.git
+cd GitLore/Backend && npm install
+cd ../Frontend && npm install
+```
+
+### 2. Configure Backend
+
+Copy `Backend/.env.example` to `Backend/.env` and set:
+
+```env
+GEMINI_API_KEY=your_key
+MONGODB_URI=your_mongodb_atlas_uri
+GITHUB_CLIENT_ID=your_oauth_client_id
+GITHUB_CLIENT_SECRET=your_oauth_client_secret
+GITHUB_CALLBACK_URL=http://localhost:8080/auth/github/callback
+SESSION_SECRET=your_random_64_char_secret
+PORT=3001
+CORS_ORIGIN=http://localhost:8080
+```
+
+Optional (for advanced features):
+```env
+# PR Intelligence Webhook
+GITHUB_WEBHOOK_SECRET=your_webhook_secret
+BACKEND_PUBLIC_URL=http://your-server:3001
+SUPERPLANE_API_KEY=your_api_key
+SUPERPLANE_SERVICE_USERNAME=your_github_username
+
+# GitHub App Bot Identity
+GITHUB_APP_ID=123456
+GITHUB_APP_INSTALLATION_ID=12345678
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+
+# Voice
+ELEVENLABS_API_KEY=your_key
+ELEVENLABS_VOICE_ID=your_voice_id
+ELEVENLABS_AGENT_ID=your_agent_id
+```
+
+### 3. Configure Frontend
+
+If the backend is not on `http://127.0.0.1:3001`, create `Frontend/.env`:
+```env
+VITE_API_ORIGIN=http://your-backend-url:3001
+```
+
+### 4. Run
+
+**Terminal 1 — Backend:**
+```bash
+cd GitLore/Backend && npm run dev
+```
+
+**Terminal 2 — Frontend:**
+```bash
+cd GitLore/Frontend && npm run dev
+```
+
+Open **http://localhost:8080** → Sign in with GitHub → Select a repo → Build Knowledge Graph → Chat.
+
+---
+
+## Chrome Extension
+
+The Chrome Extension adds a floating chat button on every GitHub repo page.
+
+1. Open `chrome://extensions` → Enable Developer Mode
+2. Click "Load unpacked" → Select `gitlore-extension/` folder
+3. Click the extension icon → Enter your GitLore API URL → Save
+4. Go to any GitHub repo → Click the floating button → Chat with the KG
+
+---
+
+## PR Intelligence (CodeRabbit-style)
+
+Enable once, every new PR gets an automatic comment with duplicate detection and Knowledge Graph context.
+
+1. Set `GITHUB_WEBHOOK_SECRET` and `BACKEND_PUBLIC_URL` in `.env`
+2. Go to GitLore Overview → Click "Enable PR Intelligence"
+3. Open a new PR → GitLore auto-comments with related PRs and past decisions
+
+For bot identity (`gitlore[bot]` badge), configure the GitHub App env vars.
+
+---
+
+## Deployment
+
+**Frontend → Vercel:**
+```bash
+cd Frontend && npm run build
+# Deploy dist/ to Vercel
+```
+
+**Backend → Vultr (or any VPS):**
+```bash
+ssh root@YOUR_SERVER_IP
+git clone https://github.com/Codealpha07/GitLore.git
+cd GitLore/Backend
+npm install
+# Create .env with production values
+npm run build && npm start
+# Or use PM2: pm2 start dist/server.js --name gitlore-backend
+```
+
+Update `CORS_ORIGIN` to include your Vercel URL.
+Update `GITHUB_CALLBACK_URL` to your production backend URL.
+
+---
+
+## Repository Layout
 
 ```
 GitLore/
-├── Backend/          # Hono API (PORT from env, default 3001)
+├── Backend/
 │   ├── src/
-│   │   ├── server.ts
-│   │   ├── routes/   # auth, repo, ingest, chat, analyze, explain, search, …
-│   │   ├── lib/      # mongo, gemini, ingest, github, …
-│   │   └── middleware/
+│   │   ├── server.ts              # Hono app, route mounting
+│   │   ├── routes/                # auth, analyze, explain, search, chat, ingest,
+│   │   │                          # voice, guardrails, enforcement, autofix, webhooks
+│   │   ├── lib/                   # gemini, mongo, github, githubApp, ingest,
+│   │   │                          # knowledgeSearch, autofix, armorclaw, patternScanner
+│   │   ├── middleware/            # auth (cookie + API key)
+│   │   └── webhooks/github/       # signature, processPrWebhook, kgSearch, buildComment
 │   └── .env.example
-├── Frontend/         # Vite dev server on port 8080
+├── Frontend/
 │   ├── src/
-│   └── vite.config.ts  # proxies /api, /auth, /health → VITE_API_ORIGIN
+│   │   ├── pages/                 # Landing, Overview, AppView, Patterns, RepoSelect
+│   │   ├── components/            # ChatPanel, KnowledgeDecisionsGraph, StoryVoiceModal,
+│   │   │                          # IngestButton, PrIntelligenceButton, GuardrailsModal,
+│   │   │                          # KnowledgeSuggestions, EnforcementLog, Navbar
+│   │   ├── context/               # Auth, Repo, Theme, Toast, RouteTransition
+│   │   └── lib/                   # gitloreApi, codemirror, parseUnifiedDiff
+│   └── vite.config.ts
+├── gitlore-extension/             # Chrome Extension (Manifest V3)
+│   ├── manifest.json
+│   ├── background/                # Service worker (API calls)
+│   ├── content/                   # Floating button on GitHub
+│   ├── sidepanel/                 # Chat side panel
+│   ├── popup/                     # Settings popup
+│   └── utils/                     # Auth, storage, GitHub API helpers
 └── README.md
 ```
 
 ---
 
-## Prerequisites
+## API Overview
 
-- **Node.js** ≥ 18  
-- **MongoDB** (Atlas or local) — connection string with access to a database named **`gitlore`** (created/used automatically)  
-- **GitHub OAuth App** — callback URL must match how you run the frontend (see below)  
-- **Gemini API key** (optional but recommended for narratives, PR extraction, embeddings, and knowledge-graph chat)
+All `/api/*` routes require authentication (cookie or `X-GitLore-API-Key` header).
 
----
-
-## Quick start
-
-### 1. Clone and install
-
-```bash
-cd GitLore/Backend && npm install
-cd ../Frontend && npm install
-```
-
-### 2. Configure the backend
-
-Copy `Backend/.env.example` to `Backend/.env` and set at least:
-
-- `MONGODB_URI` — MongoDB connection string  
-- `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_CALLBACK_URL`  
-- `SESSION_SECRET` — long random string  
-- `GEMINI_API_KEY` — for AI features (ingest, chat, explain, etc.)
-
-See **Environment variables** below for optional tuning (`PORT`, `CORS_ORIGIN`, model names, embedding models).
-
-### 3. Configure the frontend (dev)
-
-If the API is **not** on `http://127.0.0.1:3001`, create `Frontend/.env`:
-
-```env
-VITE_API_ORIGIN=http://127.0.0.1:3001
-```
-
-(`vite.config.ts` proxies `/api`, `/auth`, and `/health` to this origin.)
-
-### 4. GitHub OAuth callback
-
-For local dev with Vite on **port 8080**, set:
-
-```env
-GITHUB_CALLBACK_URL=http://localhost:8080/auth/github/callback
-```
-
-Register the same **Authorization callback URL** in your GitHub OAuth app settings. Ensure `CORS_ORIGIN` in the backend includes your frontend origin (default in `.env.example` includes `http://localhost:8080`).
-
-### 5. Run in development
-
-**Terminal 1 — API**
-
-```bash
-cd GitLore/Backend
-npm run dev
-```
-
-**Terminal 2 — UI**
-
-```bash
-cd GitLore/Frontend
-npm run dev
-```
-
-Open **http://localhost:8080**. Sign in with GitHub, select a repo, and use **Overview** for the knowledge graph and chat.
-
-### 6. Production-style run
-
-```bash
-cd GitLore/Backend && npm run build && npm start
-cd GitLore/Frontend && npm run build && npm run preview
-```
-
-Point `VITE_API_ORIGIN` / deployment URLs and `CORS_ORIGIN` at your real origins.
-
----
-
-## Environment variables
-
-### Backend (`Backend/.env`)
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `MONGODB_URI` | Yes | MongoDB connection string |
-| `GITHUB_CLIENT_ID` | Yes* | OAuth client ID |
-| `GITHUB_CLIENT_SECRET` | Yes* | OAuth client secret |
-| `GITHUB_CALLBACK_URL` | Yes* | Must match GitHub app callback (e.g. `http://localhost:8080/auth/github/callback`) |
-| `SESSION_SECRET` | Yes | Secret for session signing |
-| `GEMINI_API_KEY` | For AI | PR extraction, embeddings, chat synthesis, explain/narrate flows |
-| `PORT` | No | API port (default **3001**) |
-| `NODE_ENV` | No | `development` / `production` |
-| `CORS_ORIGIN` | No | Comma-separated allowed origins (default includes localhost:8080) |
-| `FRONTEND_URL` | No | Optional; redirect hints if not derived from callback |
-| `GEMINI_GENERATION_MODEL` | No | Default text model (default **gemini-2.5-flash-lite**) |
-| `GEMINI_CHAT_MODEL` | No | Override model for knowledge-graph chat only |
-| `GEMINI_CHAT_MODEL_FALLBACKS` | No | Comma-separated models tried on 429 after the primary chat model |
-| `GEMINI_EMBEDDING_MODELS` | No | Comma-separated embedding model names to try |
-| `GITHUB_PAT` | No | Optional fallback token for server-side GitHub calls |
-
-\*Required for OAuth flows used by the app.
-
-Full comments and examples: **`Backend/.env.example`**.
-
-### Frontend (`Frontend/.env`)
-
-| Variable | Description |
-|----------|-------------|
-| `VITE_API_ORIGIN` | Backend base URL for Vite proxy (default `http://127.0.0.1:3001`) |
-
-Never put `GEMINI_API_KEY` or `GITHUB_CLIENT_SECRET` in the frontend.
-
----
-
-## Knowledge graph & MongoDB
-
-### Ingest
-
-- Trigger **Build Knowledge Graph** from the **Overview** UI (or `POST /api/repo/:owner/:name/ingest` with a JSON body; optional `limit` 1–50, default 30).
-- Ingestion runs in the background; progress is stored in **`knowledge_progress`**.
-- Nodes are stored in **`knowledge_nodes`** (unique per `repo` + `pr_number`).
-
-### Indexes
-
-On startup the backend creates indexes including:
-
-- Text index **`knowledge_text_search`** on `knowledge_nodes` (title, summary, problem, decision, full_narrative, topics, pr_author).  
-  If you change indexed fields, you may need to **drop** the old text index in Atlas/shell and restart so MongoDB can recreate it.
-
-### Vector search (optional)
-
-For the **vector** tier in chat (and efficient semantic retrieval), configure a MongoDB Atlas **vector index** on `knowledge_nodes.embedding` whose **dimensions** match your embedding model (often **768** — confirm in Atlas UI and Gemini embedding docs). Without Atlas vector search, the backend can fall back to **in-memory** similarity over a capped set of documents.
-
----
-
-## API overview (authenticated `/api/*`)
-
-All `/api/*` routes use session auth except as noted. Examples:
-
-| Area | Examples |
+| Area | Endpoints |
 |------|-----------|
-| Repo | Repo metadata and GitHub-backed operations under `/api/repo/...` |
-| Ingest | `POST /api/repo/:owner/:name/ingest`, status/progress endpoints |
-| Chat | `GET /api/repo/:owner/:name/chat/status`, `POST /api/repo/:owner/:name/chat` |
-| Legacy / core | Analyze, explain, search, narrate, guardrails — see `Backend/src/routes/` |
-
-Public: `GET /health`, OAuth under `/auth/*`, test routes under `/test/*` as configured.
-
----
-
-## Frontend routes
-
-| Path | Purpose |
-|------|---------|
-| `/` | Landing |
-| `/app` | Main app / repo workspace |
-| `/overview` | Overview & knowledge graph experience |
-| `/patterns` | Patterns UI |
+| **Auth** | `GET /auth/github`, `GET /auth/me`, `POST /auth/logout` |
+| **Analysis** | `POST /api/analyze`, `POST /api/explain`, `POST /api/search` |
+| **Knowledge Graph** | `POST /api/repo/:o/:n/ingest`, `GET /api/repo/:o/:n/ingest/status`, `POST /api/repo/:o/:n/chat` |
+| **Voice** | `GET /api/voice/status`, `POST /api/voice/tts`, `POST /api/voice/gemini-voice-reply` |
+| **Security** | `GET /api/guardrails`, `POST /api/guardrails/test`, `POST /api/enforcement/log` |
+| **Auto-Fix** | `POST /api/repo/:o/:n/pulls/:n/auto-fix/classify`, `POST /api/repo/:o/:n/pulls/:n/auto-fix/apply` |
+| **Webhook** | `POST /webhooks/github` (signature-verified, unauthenticated) |
+| **Health** | `GET /health` |
 
 ---
 
 ## Troubleshooting
 
-- **CORS / cookies** — Backend `CORS_ORIGIN` must list your exact browser origin; use `credentials: true` compatible origins (no `*` with cookies).
-- **Proxy / wrong API** — Set `VITE_API_ORIGIN` to the host:port where Hono listens (`PORT` in `.env`).
-- **Gemini 429 / quota** — Free tier is per model and per minute/day; the chat route can fall back to other models via `GEMINI_CHAT_MODEL_FALLBACKS`. Reduce ingest frequency or enable billing if you need higher limits.
-- **API key invalid / expired** — Regenerate in [Google AI Studio](https://aistudio.google.com/apikey) and update `GEMINI_API_KEY`.
-- **Chat returns no matches** — Run ingest for the repo; try different wording; check that `knowledge_nodes` has documents for that `repo` key.
-- **Text search oddities** — After changing text index fields, drop `knowledge_text_search` and restart the server.
+| Issue | Fix |
+|-------|-----|
+| CORS errors | Add your frontend URL to `CORS_ORIGIN` in backend `.env` |
+| Chat returns "no knowledge graph" | Run ingest first from Overview page |
+| Gemini 429 / quota | Free tier limits — reduce ingest frequency or use `GEMINI_CHAT_MODEL_FALLBACKS` |
+| Webhook not firing | Check `BACKEND_PUBLIC_URL` is reachable, verify webhook in repo settings |
+| Chrome extension no button | Verify extension loaded in `chrome://extensions`, must be on a GitHub repo page |
 
 ---
 
-## Scripts reference
+## Team
 
-**Backend:** `npm run dev` · `npm run build` · `npm start` · `npm run type-check`
-
-**Frontend:** `npm run dev` · `npm run build` · `npm run preview` · `npm run lint` · `npm test`
-
----
-
-## Documentation in-repo
-
-Implementation notes and follow-ups for the knowledge graph feature live next to this repo in the parent workspace as **`KNOWLEDGE_GRAPH_IMPLEMENTATION.md`** and **`KNOWLEDGE_GRAPH_FOLLOWUP.md`** (paths may vary if you cloned only `GitLore`).
+Built by a team of 4 at HackByte 4.0, IIITDM Jabalpur, April 2026.
 
 ---
 
 ## License
 
-No license file is included in this repository; add one if you intend to open-source or distribute the project.
+MIT

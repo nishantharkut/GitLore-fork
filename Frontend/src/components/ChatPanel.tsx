@@ -260,7 +260,7 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
         }
         const armorNote =
           res.armorAgent && Array.isArray(res.enforcementLog)
-            ? `\n\n---\n_ArmorClaw:_ ${res.enforcementLog.length} policy check(s) — ${res.enforcementLog.filter((e) => e.action === "deny").length} blocked. See **ArmorClaw enforcement** below._`
+            ? `\n\n---\n_ArmorClaw:_ ${res.enforcementLog.length} policy check(s); ${res.enforcementLog.filter((e) => e.action === "deny").length} blocked. See **ArmorClaw enforcement** below._`
             : "";
         setMessages((prev) => [
           ...prev,
@@ -414,7 +414,7 @@ export function ChatPanel({ onChatComplete }: { onChatComplete?: () => void } = 
                           <span className="text-amber-400/90">Synthesis: offline (no API key)</span>
                         )}
                         {msg.synthesis === "fallback_error" && (
-                          <span className="text-red-400/90">Synthesis: Gemini error — raw matches shown</span>
+                          <span className="text-red-400/90">Synthesis: Gemini error; raw matches shown</span>
                         )}
                       </span>
                     )}

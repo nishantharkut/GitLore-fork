@@ -18,7 +18,7 @@ function MainChrome() {
       {hasNav && <Navbar />}
       <main
         id="main-content"
-        className={`relative ${hasNav ? "min-h-[calc(100dvh-3.5rem)]" : "min-h-dvh"}`}
+        className={`relative bg-gitlore-bg ${hasNav ? "min-h-[calc(100dvh-3.5rem)]" : "min-h-dvh"}`}
         aria-busy={routeChromeActive}
         aria-live="polite"
       >

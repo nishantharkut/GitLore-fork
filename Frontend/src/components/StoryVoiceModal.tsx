@@ -65,7 +65,7 @@ export function StoryVoiceModal({ open, onClose, narrative, line, repoFull, file
 ## Voice conversation (English and Hindi)
 You are on a live voice call with a developer about the story above.
 - For simple greetings or thanks, reply briefly yourself without tools.
-- For questions about this code line, pull requests, review discussion, decision, impact, timeline, or what the change does: you MUST call the client tool "${VOICE_CLIENT_TOOL}" with parameter user_question set to the user's question (their exact words when possible, whether English or Hindi). When the tool returns text, read it aloud in the same language as the answer text—you may smooth phrasing slightly for speech but must not change facts.
+- For questions about this code line, pull requests, review discussion, decision, impact, timeline, or what the change does: you MUST call the client tool "${VOICE_CLIENT_TOOL}" with parameter user_question set to the user's question (their exact words when possible, whether English or Hindi). When the tool returns text, read it aloud in the same language as the answer text. You may smooth phrasing slightly for speech but must not change facts.
 - Never invent PR numbers, authors, or events that are not supported by the story context.
 - If the tool returns an error, apologize once and ask them to try again.`,
     [narrative, repoFull, filePath, line]
@@ -346,7 +346,7 @@ You are on a live voice call with a developer about the story above.
       agent: {
         prompt: { prompt: agentPromptForVoice },
         firstMessage:
-          "Hi — I have the story for this line of code. You can ask in English or Hindi about the change, the discussion, or the decision. What would you like to know?",
+          "Hi. I have the story for this line of code. You can ask in English or Hindi about the change, the discussion, or the decision. What would you like to know?",
         // Omit language so the agent uses its dashboard default (often multilingual ASR).
       },
     };

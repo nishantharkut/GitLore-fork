@@ -13,8 +13,11 @@ type SimNode = {
 };
 
 const N = 25;
-/** Physics steps before the graph is “settled” (sparse layout needs a few more steps than a tight blob). */
-const SIM_FRAMES = 64;
+/** Main phase: attraction + repulsion (graph structure). */
+const SIM_FRAMES = 56;
+/** Final phase: repulsion + walls only — spreads nodes apart with visible gaps. */
+const SPARSE_FRAMES = 36;
+const TOTAL_PHYSICS_FRAMES = SIM_FRAMES + SPARSE_FRAMES;
 const EDGE_OPACITY = 0.12;
 const MIN_SIZE = 64;
 
@@ -26,8 +29,9 @@ function randomGraph(w: number, h: number): { nodes: SimNode[]; edges: [number, 
   const cy = h / 2;
   const innerW = Math.max(40, w - pad * 2);
   const innerH = Math.max(40, h - pad * 2);
-  const spread = Math.min(innerW, innerH) * 0.42;
-  const golden = 2.39996322972865332; // ~π * (3 − √5) — fills disk evenly, avoids a tight center blob
+  /* Start from a wider disk so the sparse phase does not clip nodes at the walls. */
+  const spread = Math.min(innerW, innerH) * 0.52;
+  const golden = 2.39996322972865332; // ~π * (3 − √5); fills disk evenly, avoids a tight center blob
   for (let i = 0; i < N; i++) {
     const roll = rand();
     const color = roll < 0.8 ? "#34D399" : roll < 0.95 ? "#FBBF24" : "#F87171";
@@ -47,7 +51,7 @@ function randomGraph(w: number, h: number): { nodes: SimNode[]; edges: [number, 
       r: baseR,
       baseR,
       color,
-      label: `auth_service.py — ${Math.floor(rand() * 80)} changes · ${2 + Math.floor(rand() * 5)} authors`,
+      label: `auth_service.py · ${Math.floor(rand() * 80)} changes · ${2 + Math.floor(rand() * 5)} authors`,
     });
   }
   const edges: [number, number][] = [];
@@ -72,10 +76,11 @@ type Sim = {
 function stepPhysics(sim: Sim, w: number, h: number) {
   const { nodes, edges } = sim;
   const pad = 26;
-  const kRep = 260;
-  const kAtt = 0.0055;
-  const kWall = 0.055;
-  const damp = 0.86;
+  const sparsePhase = sim.physicsSteps >= SIM_FRAMES;
+  const kRep = sparsePhase ? 520 : 300;
+  const kAtt = sparsePhase ? 0 : 0.0042;
+  const kWall = sparsePhase ? 0.08 : 0.055;
+  const damp = sparsePhase ? 0.82 : 0.86;
 
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
@@ -91,16 +96,18 @@ function stepPhysics(sim: Sim, w: number, h: number) {
       nodes[j].vy += fy;
     }
   }
-  for (const [a, b] of edges) {
-    const dx = nodes[b].x - nodes[a].x;
-    const dy = nodes[b].y - nodes[a].y;
-    nodes[a].vx += dx * kAtt;
-    nodes[a].vy += dy * kAtt;
-    nodes[b].vx -= dx * kAtt;
-    nodes[b].vy -= dy * kAtt;
+  if (!sparsePhase) {
+    for (const [a, b] of edges) {
+      const dx = nodes[b].x - nodes[a].x;
+      const dy = nodes[b].y - nodes[a].y;
+      nodes[a].vx += dx * kAtt;
+      nodes[a].vy += dy * kAtt;
+      nodes[b].vx -= dx * kAtt;
+      nodes[b].vy -= dy * kAtt;
+    }
   }
   for (const n of nodes) {
-    // No center gravity — that collapsed everything to the middle. Soft walls keep the graph in the frame
+    // No center gravity: that collapsed everything to the middle. Soft walls keep the graph in the frame
     // while repulsion keeps nodes visually sparse.
     if (n.x < pad) n.vx += (pad - n.x) * kWall;
     if (n.x > w - pad) n.vx -= (n.x - (w - pad)) * kWall;
@@ -129,7 +136,8 @@ function renderGraph(canvas: HTMLCanvasElement, sim: Sim) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  ctx.strokeStyle = `rgba(255,255,255,${EDGE_OPACITY})`;
+  const light = typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light";
+  ctx.strokeStyle = light ? `rgba(0,0,0,${EDGE_OPACITY * 0.9})` : `rgba(255,255,255,${EDGE_OPACITY})`;
   ctx.lineWidth = 1;
   for (const [a, b] of edges) {
     ctx.beginPath();
@@ -170,7 +178,24 @@ function pickNodeIndex(sim: Sim, mx: number, my: number): number | null {
   return null;
 }
 
-const KnowledgeGraph = () => {
+export type KnowledgeGraphCanvasProps = {
+  /** Outer wrapper (sets available space for layout / resize) */
+  className?: string;
+  /** Tailwind classes on the canvas (height, min-height, radius) */
+  canvasClassName?: string;
+  showCaption?: boolean;
+  captionClassName?: string;
+  /** Pin caption over the bottom of the canvas so the graph can use full height */
+  captionOverlay?: boolean;
+};
+
+export function KnowledgeGraphCanvas({
+  className = "",
+  canvasClassName = "",
+  showCaption = true,
+  captionClassName = "mt-2 text-center font-body text-[11px] text-[var(--text-ghost)] md:text-[12px]",
+  captionOverlay = false,
+}: KnowledgeGraphCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const simRef = useRef<Sim | null>(null);
@@ -190,14 +215,14 @@ const KnowledgeGraph = () => {
     const w = canvas.width / dpr;
     const h = canvas.height / dpr;
 
-    if (sim.physicsSteps < SIM_FRAMES) {
+    if (sim.physicsSteps < TOTAL_PHYSICS_FRAMES) {
       stepPhysics(sim, w, h);
       sim.physicsSteps += 1;
     }
 
     renderGraph(canvas, sim);
 
-    if (sim.physicsSteps >= SIM_FRAMES) {
+    if (sim.physicsSteps >= TOTAL_PHYSICS_FRAMES) {
       sim.settled = true;
       sim.raf = null;
       runningRef.current = false;
@@ -421,6 +446,49 @@ const KnowledgeGraph = () => {
     };
   }, [startSim, stopSim]);
 
+  const caption = showCaption ? (
+    <p
+      className={
+        captionOverlay
+          ? "pointer-events-none absolute bottom-0 left-0 right-0 z-[1] border-t border-[var(--border)] bg-[color-mix(in_srgb,var(--code-bg)_92%,transparent)] px-3 py-2.5 text-center font-body text-[10px] leading-snug text-[var(--text-ghost)] backdrop-blur-[6px] md:text-[11px]"
+          : captionClassName
+      }
+    >
+      Hover a node for details · <span className="text-[var(--text-secondary)]">Drag</span> to pull files and watch how PRs link them
+    </p>
+  ) : null;
+
+  const graph = (
+    <div
+      ref={wrapRef}
+      className={`relative w-full min-h-0 ${captionOverlay ? "min-h-[12rem] flex-1" : ""} ${className}`.trim()}
+    >
+      <canvas
+        ref={canvasRef}
+        className={`graph-canvas block w-full touch-none select-none bg-[var(--code-bg)] ${captionOverlay ? "h-full min-h-[12rem] rounded-none border-0" : "rounded-[6px] border border-[var(--border)]"} ${canvasClassName}`.trim()}
+        aria-label="Interactive codebase knowledge graph: hover nodes for details, drag to rearrange"
+      />
+      <div
+        ref={tooltipRef}
+        className="pointer-events-none fixed z-[60] hidden max-w-[240px] rounded-[6px] border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 font-code text-[11px] font-normal tracking-[0.01em] text-[var(--text)] [overflow-wrap:anywhere]"
+      />
+      {captionOverlay && caption}
+    </div>
+  );
+
+  if (captionOverlay) {
+    return <div className="relative flex min-h-0 w-full flex-1 flex-col">{graph}</div>;
+  }
+
+  return (
+    <>
+      {graph}
+      {caption}
+    </>
+  );
+}
+
+export default function KnowledgeGraph() {
   return (
     <section className="py-16 md:py-24">
       <div className="landing-container">
@@ -431,27 +499,16 @@ const KnowledgeGraph = () => {
           <p className="font-heading mb-8 mt-2 text-[20px] font-medium leading-[1.25] tracking-[-0.02em] text-[var(--text)] md:text-[24px]">
             Your codebase as a knowledge graph.
           </p>
-          <div ref={wrapRef} className="relative w-full min-h-[320px] md:min-h-[420px]">
-            <canvas
-              ref={canvasRef}
-              className="graph-canvas block h-[min(420px,55vw)] min-h-[320px] w-full touch-none select-none rounded-[6px] border border-[var(--border)] bg-[var(--code-bg)] md:min-h-[420px]"
-              aria-label="Interactive codebase knowledge graph - drag nodes to explore"
-            />
-            <div
-              ref={tooltipRef}
-              className="pointer-events-none fixed z-[60] hidden max-w-[240px] rounded-[6px] border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 font-code text-[11px] font-normal tracking-[0.01em] text-[var(--text)]"
-            />
-          </div>
-          <p className="mt-3 text-center font-body text-[12px] text-[var(--text-ghost)]">
-            Hover a node for details · <span className="text-[var(--text-secondary)]">Drag</span> to pull files and watch how PRs link them
-          </p>
+          <KnowledgeGraphCanvas
+            className="min-h-[320px] md:min-h-[420px]"
+            canvasClassName="h-[min(420px,55vw)] min-h-[320px] md:min-h-[420px]"
+            captionClassName="mt-3 text-center font-body text-[12px] text-[var(--text-ghost)]"
+          />
         </FadeIn>
       </div>
     </section>
   );
-};
-
-export default KnowledgeGraph;
+}
 
 
 

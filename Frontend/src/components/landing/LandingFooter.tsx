@@ -13,17 +13,14 @@ const FooterColTitle = ({ children }: { children: string }) => (
 
 const LandingFooter = () => {
   return (
-    <footer className="relative overflow-hidden border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-sm">
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--accent)]/35 to-transparent"
-        aria-hidden
-      />
+    <footer className="relative overflow-hidden border-t border-[var(--border)] bg-[var(--bg)]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[var(--accent)]/35" aria-hidden />
       <div className="landing-container">
         <div className="grid grid-cols-1 gap-12 py-14 md:grid-cols-12 md:gap-10 md:py-16 lg:gap-12">
           <div className="md:col-span-5 lg:col-span-4">
             <Link to="/" className="group inline-flex items-center gap-2.5">
               <span
-                className="h-2 w-2 shrink-0 rounded-sm shadow-[0_0_10px_var(--accent-glow)] transition-transform duration-300 group-hover:scale-110"
+                className="h-2 w-2 shrink-0 rounded-sm transition-transform duration-300 group-hover:scale-110"
                 style={{ background: "var(--accent)" }}
                 aria-hidden
               />
@@ -72,12 +69,7 @@ const LandingFooter = () => {
 
         <div className="border-t py-8" style={{ borderColor: "var(--border)" }}>
           <div
-            className="rounded-2xl border px-5 py-5 md:px-6 md:py-5"
-            style={{
-              borderColor: "var(--border)",
-              background: "color-mix(in srgb, var(--elevated) 88%, transparent)",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
-            }}
+            className="rounded-[10px] border border-[var(--border)] bg-[var(--elevated)] px-5 py-5 md:px-6 md:py-5"
           >
             <p className="font-code text-[10px] font-medium uppercase tracking-[2px]" style={{ color: "var(--text-ghost)" }}>
               Privacy

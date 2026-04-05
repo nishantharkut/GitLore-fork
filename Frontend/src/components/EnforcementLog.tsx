@@ -76,7 +76,7 @@ export function EnforcementLog({ refreshKey = 0 }: Props) {
         typeof parsed !== "object" ||
         Array.isArray(parsed)
       ) {
-        setTestResult("Params must be a JSON object, e.g. {} or {\"path\":\"README.md\"} — not an array or null.");
+        setTestResult("Params must be a JSON object, e.g. {} or {\"path\":\"README.md\"}; not an array or null.");
         return;
       }
       params = parsed as Record<string, unknown>;
@@ -90,7 +90,7 @@ export function EnforcementLog({ refreshKey = 0 }: Props) {
       const repo = `${target.owner}/${target.name}`;
       const r = await postEnforcementTest({ tool: testTool, params, repo });
       setTestResult(
-        `${r.allowed ? "ALLOWED" : "BLOCKED"} — ${r.policy_rule} (${r.risk_level})\n${r.reason}`
+        `${r.allowed ? "ALLOWED" : "BLOCKED"}: ${r.policy_rule} (${r.risk_level})\n${r.reason}`
       );
     } catch (e) {
       setTestResult(e instanceof Error ? e.message : "Test failed");

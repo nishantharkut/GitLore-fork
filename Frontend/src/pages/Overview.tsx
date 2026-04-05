@@ -226,13 +226,13 @@ const Overview = () => {
             <FadeIn direction="up">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 {[
-                  { value: stats ? fmt(stats.stars) : "—", label: "Stars" },
-                  { value: stats ? fmt(stats.forks) : "—", label: "Forks" },
-                  { value: stats ? fmt(stats.pullRequests) : "—", label: "Open + closed PRs (total)" },
-                  { value: stats ? fmt(stats.commits) : "—", label: "Commits (default branch)" },
-                  { value: stats?.issues != null ? fmt(stats.issues) : "—", label: "Issues" },
-                  { value: stats?.contributors != null ? fmt(stats.contributors) : "—", label: "Contributors" },
-                  { value: stats?.files != null ? fmt(stats.files) : "—", label: "Files (tree)" },
+                  { value: stats ? fmt(stats.stars) : "-", label: "Stars" },
+                  { value: stats ? fmt(stats.forks) : "-", label: "Forks" },
+                  { value: stats ? fmt(stats.pullRequests) : "-", label: "Open + closed PRs (total)" },
+                  { value: stats ? fmt(stats.commits) : "-", label: "Commits (default branch)" },
+                  { value: stats?.issues != null ? fmt(stats.issues) : "-", label: "Issues" },
+                  { value: stats?.contributors != null ? fmt(stats.contributors) : "-", label: "Contributors" },
+                  { value: stats?.files != null ? fmt(stats.files) : "-", label: "Files (tree)" },
                 ].map((stat) => (
                   <div key={stat.label} className="rounded-sm border border-gitlore-border bg-gitlore-surface p-3">
                     <div className="font-heading text-xl font-bold text-gitlore-text">{stat.value}</div>
@@ -314,8 +314,8 @@ const Overview = () => {
                 {liveEvents.map((ev, i) => (
                   <li key={`${ev.timestamp}-${i}`} className="border-b border-gitlore-border/60 pb-2 text-sm last:border-0 last:pb-0">
                     <div className="font-code text-gitlore-text">
-                      {ev.file_path || "—"}
-                      {ev.line != null ? `:${ev.line}` : ""} — {ev.pattern_name || "Explanation cached"}
+                      {ev.file_path || "-"}
+                      {ev.line != null ? `:${ev.line}` : ""} · {ev.pattern_name || "Explanation cached"}
                     </div>
                     <div className="mt-0.5 text-xs text-gitlore-text-secondary">
                       <span className="uppercase">{ev.confidence}</span> confidence · {formatCacheEventTime(ev.timestamp)}
@@ -377,7 +377,7 @@ const Overview = () => {
                     <ul className="mt-1 space-y-1 text-sm text-gitlore-text">
                       {mongoAnalytics.patterns.slice(0, 5).map((p) => (
                         <li key={String(p._id)} className="flex justify-between gap-2">
-                          <span className="min-w-0 truncate">{p._id || "—"}</span>
+                          <span className="min-w-0 truncate">{p._id || "-"}</span>
                           <span className="shrink-0 text-gitlore-text-secondary">{p.count}×</span>
                         </li>
                       ))}

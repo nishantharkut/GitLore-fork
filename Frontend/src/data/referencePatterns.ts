@@ -30,7 +30,7 @@ export const REFERENCE_PATTERNS: ReferencePattern[] = [
   },
   {
     id: "ref-xss-innerhtml",
-    name: "XSS — innerHTML",
+    name: "XSS: innerHTML",
     langs: ["JavaScript", "TypeScript"],
     severity: "critical",
     category: "security",
@@ -141,7 +141,7 @@ export const REFERENCE_PATTERNS: ReferencePattern[] = [
   },
   {
     id: "ref-race-setstate",
-    name: "Race Condition — setState",
+    name: "Race Condition: setState",
     langs: ["JavaScript", "TypeScript"],
     severity: "high",
     category: "reliability",
@@ -150,7 +150,7 @@ export const REFERENCE_PATTERNS: ReferencePattern[] = [
   },
   {
     id: "ref-memory-leak-useeffect",
-    name: "Memory Leak — useEffect",
+    name: "Memory Leak: useEffect",
     langs: ["JavaScript", "TypeScript"],
     severity: "high",
     category: "reliability",

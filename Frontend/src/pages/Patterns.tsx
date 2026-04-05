@@ -241,7 +241,7 @@ const Patterns = () => {
       <div className="mx-auto max-w-[1200px] px-4 py-8 md:px-8 md:py-12">
         <h1 className="mb-1 font-heading text-2xl font-bold text-gitlore-text">Patterns & themes</h1>
         <p className="text-sm text-gitlore-text-secondary">
-          Repo <span className="font-code text-gitlore-accent">{repoFull || "—"}</span>
+          Repo <span className="font-code text-gitlore-accent">{repoFull || "-"}</span>
           {repoPrimaryLang ? (
             <>
               {" "}
@@ -257,7 +257,7 @@ const Patterns = () => {
             labels, Analyze-line narratives) plus a lightweight <span className="text-gitlore-text/90">code scan</span> of up
             to 50 text files on the branch you selected in the header. Churn hotspots and decision timelines are derived
             from knowledge-graph nodes. At the bottom, <span className="text-gitlore-text/90">reference cards</span> are
-            curated examples — they light up with a gold border when the scan finds a matching rule id in your tree.
+            curated examples; they light up with a gold border when the scan finds a matching rule id in your tree.
           </p>
         </div>
 
@@ -302,13 +302,13 @@ const Patterns = () => {
                 to="/overview"
                 className="rounded-sm border border-gitlore-accent/40 bg-gitlore-accent/10 px-3 py-1.5 font-medium text-gitlore-accent transition-colors hover:bg-gitlore-accent/20"
               >
-                Overview — build knowledge graph
+                Overview: build knowledge graph
               </Link>
               <Link
                 to="/app"
                 className="rounded-sm border border-gitlore-border px-3 py-1.5 text-gitlore-text-secondary transition-colors hover:border-gitlore-accent/50 hover:text-gitlore-text"
               >
-                Live repo — Explain comments &amp; Analyze lines
+                Live repo: Explain comments &amp; Analyze lines
               </Link>
             </div>
 
@@ -395,7 +395,7 @@ const Patterns = () => {
                   Churn hotspots (files in many PRs)
                 </div>
                 <p className="mt-1 max-w-xl text-xs text-gitlore-text-secondary/90">
-                  Paths that appear in <span className="text-gitlore-text">changed_files</span> on multiple ingested PRs —
+                  Paths that appear in <span className="text-gitlore-text">changed_files</span> on multiple ingested PRs are
                   good candidates for refactors or ownership discussion.
                 </p>
                 <FadeIn direction="up">
@@ -427,7 +427,7 @@ const Patterns = () => {
                                   {h.file}
                                 </Link>
                                 <span className="shrink-0 text-gitlore-text-secondary">
-                                  {h.prCount} PRs · {h.types.join(", ") || "—"}
+                                  {h.prCount} PRs · {h.types.join(", ") || "-"}
                                 </span>
                               </div>
                               <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-gitlore-text-secondary">
@@ -494,7 +494,7 @@ const Patterns = () => {
                   Possible decision shifts (heuristic)
                 </div>
                 <p className="mt-1 max-w-2xl text-xs text-gitlore-text-secondary/90">
-                  Later PR decisions that share terms with earlier listed alternatives — not proof of reversal, but a cue
+                  Later PR decisions that share terms with earlier listed alternatives are not proof of reversal, but a cue
                   to read both threads.
                 </p>
                 <FadeIn direction="up">
@@ -555,7 +555,7 @@ const Patterns = () => {
               <FadeIn direction="up">
                 {scan && !scanLoading && (
                   <p className="mb-3 font-code text-[11px] text-gitlore-text-secondary">
-                    Branch <span className="text-gitlore-text">{scan.branch || "—"}</span> · {scan.fileCount} files touched ·{" "}
+                    Branch <span className="text-gitlore-text">{scan.branch || "-"}</span> · {scan.fileCount} files touched ·{" "}
                     {scan.cached ? "served from cache" : "fresh scan"} · {new Date(scan.scannedAt).toLocaleString()}
                   </p>
                 )}
@@ -739,7 +739,7 @@ const Patterns = () => {
           <h2 className="mb-1 font-heading text-lg font-semibold text-gitlore-text">Reference examples</h2>
           <p className="mb-4 max-w-2xl text-xs text-gitlore-text-secondary">
             Curated anti-pattern vs better-pattern snippets. Cards with a gold border had at least one matching hit in the
-            last code scan (rule ids line up with the scanner). Everything here is educational — always confirm in context.
+            last code scan (rule ids line up with the scanner). Everything here is educational; always confirm in context.
           </p>
 
           <div className="mb-3 flex flex-wrap gap-2">
@@ -851,7 +851,7 @@ const Patterns = () => {
                       {p.correct}
                     </pre>
                     <div className="mt-auto border-t border-gitlore-border/60 pt-3 text-[10px] leading-snug text-gitlore-text-secondary">
-                      Not a substitute for review — cross-check with the Live repo and your team&apos;s standards.
+                      Not a substitute for review; cross-check with the Live repo and your team&apos;s standards.
                     </div>
                   </div>
                 );

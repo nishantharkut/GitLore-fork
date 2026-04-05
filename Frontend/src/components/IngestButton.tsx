@@ -19,7 +19,7 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
   useEffect(() => {
     if (prevStatus.current === "running" && status === "done") {
       toast({
-        message: `Knowledge Graph built — ${nodeCount} decision${nodeCount === 1 ? "" : "s"} found`,
+        message: `Knowledge Graph built: ${nodeCount} decision${nodeCount === 1 ? "" : "s"} found`,
         type: "success",
       });
     }
@@ -105,7 +105,7 @@ export function IngestButton({ onComplete }: { onComplete?: () => void }) {
       }
     } catch (err) {
       setStatus("error");
-      toast({ message: "Ingest failed — check API key", type: "error" });
+      toast({ message: "Ingest failed. Check API key", type: "error" });
       console.error("Ingest error:", err);
     }
   };

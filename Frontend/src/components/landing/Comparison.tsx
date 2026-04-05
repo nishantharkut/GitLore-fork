@@ -2,8 +2,8 @@ import { Check, X } from "lucide-react";
 import { FadeIn } from "../effects/FadeIn";
 
 const rows: { capability: string; blame: boolean; gitlens: boolean; copilot: boolean; gitlore: boolean; emphasize?: boolean }[] = [
-  { capability: "Who changed it?", blame: true, gitlens: true, copilot: false, gitlore: true },
-  { capability: "When was it changed?", blame: true, gitlens: true, copilot: false, gitlore: true },
+  { capability: "Who changed it?", blame: true, gitlens: true, copilot: true, gitlore: true },
+  { capability: "When was it changed?", blame: true, gitlens: true, copilot: true, gitlore: true },
   { capability: "What does this code do?", blame: false, gitlens: false, copilot: true, gitlore: true },
   {
     capability: "Why was it written this way?",
@@ -53,7 +53,7 @@ function MarkCell({
     "mx-auto flex h-9 w-9 items-center justify-center rounded-full border transition-colors md:h-10 md:w-10";
   const yesClasses = supported
     ? isGitlore
-      ? `${baseWrap} border-[var(--accent)]/45 bg-[var(--accent)]/18 text-[var(--accent)] shadow-[0_0_20px_-4px_var(--accent)]`
+      ? `${baseWrap} border-[var(--accent)]/45 bg-[var(--accent)]/18 text-[var(--accent)]`
       : `${baseWrap} border-[color-mix(in_srgb,var(--success)_45%,transparent)] bg-[var(--success-dim)] text-[var(--success)]`
     : `${baseWrap} border-[var(--border-strong)] bg-[var(--surface-hover)]/85 text-[var(--text-secondary)]`;
 
@@ -83,17 +83,9 @@ function MarkCell({
 const Comparison = () => {
   return (
     <section
-      id="differentiator"
-      className="relative overflow-hidden border-y border-[var(--border)] bg-[var(--bg)]/90 py-16 backdrop-blur-[1px] md:py-28"
+      id="copilot-comparison"
+      className="relative overflow-hidden border-y border-[var(--border)] bg-[var(--bg)] py-16 md:py-28"
     >
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.35]"
-        style={{
-          background:
-            "radial-gradient(ellipse 80% 50% at 50% -20%, var(--accent), transparent 55%), radial-gradient(ellipse 60% 40% at 100% 50%, rgba(99,102,241,0.06), transparent 45%)",
-        }}
-        aria-hidden
-      />
       <div className="landing-container relative z-[1] min-w-0">
         <FadeIn direction="up">
           <div className="section-label">
@@ -105,8 +97,8 @@ const Comparison = () => {
           <p className="mt-2 font-body text-[15px] text-[var(--text-secondary)] md:text-[16px]">No. Here&apos;s the difference.</p>
 
           <div className="mt-10 -mx-1 min-w-0 overflow-x-auto px-1 pb-1 [-webkit-overflow-scrolling:touch] sm:mx-0 sm:px-0">
-            <div className="comparison-table-wrap rounded-2xl border border-[var(--border)]/90 bg-[var(--surface)]/60 p-1 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.45)] backdrop-blur-sm md:p-1.5">
-              <div className="min-w-0 overflow-hidden rounded-xl ring-1 ring-[var(--border)]/60">
+            <div className="comparison-table-wrap rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-1 md:p-1.5">
+              <div className="min-w-0 overflow-hidden rounded-[6px] border border-[var(--border)]">
                 <table className="w-full min-w-[560px] border-collapse text-[var(--text)] sm:min-w-[640px]">
                   <thead>
                     <tr className="bg-[var(--elevated)]/95 font-code text-[9px] uppercase tracking-[0.16em] sm:text-[10px] sm:tracking-[0.18em]">
@@ -133,7 +125,7 @@ const Comparison = () => {
                         <span className="sm:hidden">Copilot</span>
                       </th>
                       <th
-                        className="comparison-head gitlore-col-head border-b border-l border-[var(--accent)]/35 bg-gradient-to-b from-[var(--accent)]/18 to-[var(--accent)]/08 px-2 py-4 font-bold text-[var(--accent)] md:px-4"
+                        className="comparison-head gitlore-col-head border-b border-l border-[var(--accent)]/35 bg-[var(--accent)]/12 px-2 py-4 font-bold text-[var(--accent)] md:px-4"
                         scope="col"
                       >
                         GitLore

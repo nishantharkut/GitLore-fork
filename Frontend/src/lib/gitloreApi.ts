@@ -911,7 +911,7 @@ export async function postVoiceTts(
     try {
       const j = (await res.json()) as { error?: string; message?: string; hint?: string };
       const parts = [j.error || j.message, j.hint].filter(Boolean);
-      msg = parts.length ? parts.join(" — ") : msg;
+      msg = parts.length ? parts.join(". ") : msg;
     } catch {
       try {
         const t = await res.text();

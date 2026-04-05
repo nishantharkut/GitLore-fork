@@ -32,7 +32,7 @@ const cards: StackCard[] = [
   {
     name: "GitHub GraphQL + REST",
     use: "PR fetching, blame data, file content, OAuth",
-    why: "GraphQL for efficient batch PR fetching — one call for PR + reviews + issues. REST for file content and blame.",
+    why: "GraphQL for efficient batch PR fetching: one call for PR + reviews + issues. REST for file content and blame.",
     iconTone: "slate",
     logos: [{ src: `${LOGO_BASE}/github.svg`, alt: "GitHub" }],
   },
@@ -80,10 +80,10 @@ const cards: StackCard[] = [
 ];
 
 const toneClasses: Record<IconTone, string> = {
-  gold: "bg-[var(--accent)]/14 ring-[var(--accent)]/20",
-  green: "bg-emerald-500/10 ring-emerald-500/20",
-  slate: "bg-[var(--text-secondary)]/10 ring-[var(--border)]",
-  violet: "bg-violet-500/10 ring-violet-500/25 dark:bg-violet-500/12",
+  gold: "bg-[var(--accent)]/14",
+  green: "bg-emerald-500/10",
+  slate: "bg-[var(--text-secondary)]/10",
+  violet: "bg-violet-500/10 dark:bg-violet-500/12",
 };
 
 function BrandLogos({ logos, pair }: { logos: StackCard["logos"]; pair: boolean }) {
@@ -116,18 +116,14 @@ function StackCardItem({ card }: { card: StackCard }) {
   const pair = card.logos.length > 1;
   return (
     <article
-      className="group relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--border)]/90 bg-[var(--surface)]/80 p-6 shadow-[0_4px_24px_-8px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:border-[var(--accent)]/35 hover:shadow-[0_20px_48px_-20px_rgba(0,0,0,0.55),0_0_0_1px_var(--accent)]/12"
-      style={{ WebkitBackdropFilter: "blur(8px)" }}
+      className="bento-card group relative flex h-full min-h-0 flex-col overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-6"
     >
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--accent)]/35 to-transparent opacity-80"
-        aria-hidden
-      />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[var(--accent)]/35 opacity-80" aria-hidden />
       {/* Row 2 uses minmax(_,auto): short “why” copy (e.g. Hono) was shrinking that row and shifting the divider vs neighbors. Floor matches ~3 lines of body + label + padding. */}
       <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(8.25rem,auto)] gap-5">
         <div className="flex min-h-0 min-w-0 flex-col gap-4 sm:flex-row sm:items-stretch">
           <div
-            className={`flex min-h-[3.5rem] min-w-[3.5rem] shrink-0 items-center justify-center rounded-2xl ring-1 ring-inset transition-transform duration-300 group-hover:scale-105 sm:self-start ${toneClasses[card.iconTone]} ${pair ? "min-w-[5.25rem] px-2" : ""}`}
+            className={`flex min-h-[3.5rem] min-w-[3.5rem] shrink-0 items-center justify-center rounded-[6px] border border-[var(--border)] sm:self-start ${toneClasses[card.iconTone]} ${pair ? "min-w-[5.25rem] px-2" : ""}`}
           >
             <BrandLogos logos={card.logos} pair={pair} />
           </div>
@@ -152,15 +148,7 @@ function StackCardItem({ card }: { card: StackCard }) {
 
 const BuiltWith = () => {
   return (
-    <section id="technology" className="relative overflow-hidden border-y border-[var(--border)] bg-[var(--bg)]/90 py-16 backdrop-blur-[1px] md:py-28">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-40"
-        style={{
-          background:
-            "radial-gradient(ellipse 70% 45% at 20% 0%, rgba(201,168,76,0.08), transparent 50%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(99,102,241,0.07), transparent 50%)",
-        }}
-        aria-hidden
-      />
+    <section id="technology" className="relative overflow-hidden border-y border-[var(--border)] bg-[var(--bg)] py-16 md:py-28">
       <div className="landing-container relative z-[1] min-w-0 max-w-[960px] lg:max-w-[1180px]">
         <FadeIn direction="up">
           <div className="section-label">

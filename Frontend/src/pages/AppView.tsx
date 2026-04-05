@@ -1714,12 +1714,12 @@ const AppView = () => {
         </button>
         <div className="min-w-0 flex-1" />
         <span className="hidden truncate px-3 py-2 font-code text-sm text-gitlore-text-secondary md:block md:max-lg:text-xs">
-          {target.filePath || "— no file selected —"}
+          {target.filePath || "No file selected"}
         </span>
       </div>
       <div className="border-t border-gitlore-border/60 px-3 py-2 md:hidden">
         <span className="block truncate font-code text-[11px] leading-5 text-gitlore-text-secondary">
-          {target.filePath || "— no file selected —"}
+          {target.filePath || "No file selected"}
         </span>
       </div>
     </div>

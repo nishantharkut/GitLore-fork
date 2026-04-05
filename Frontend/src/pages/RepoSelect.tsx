@@ -11,9 +11,9 @@ const PAGE_SIZE = 12;
 const FETCH_LIMIT = 100;
 
 function fmtUpdated(iso: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 

@@ -161,7 +161,7 @@ function nodeShape(n: KnowledgeLayoutResponse["nodes"][0], key: string, theme: T
   const accent = n.color;
   const label = n.label;
   const sub = n.sublabel ? `${n.sublabel.slice(0, 48)}${n.sublabel.length > 48 ? "…" : ""}` : "";
-  const tooltip = [n.label, n.sublabel].filter(Boolean).join(" — ");
+  const tooltip = [n.label, n.sublabel].filter(Boolean).join(" · ");
   const L = theme === "light";
 
   const textMain = L ? "#0f172a" : "#f8fafc";
@@ -866,7 +866,7 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
           <div>
             <h3 className="text-sm font-medium text-gitlore-text">Knowledge graph</h3>
             <p className="mt-0.5 max-w-[52rem] text-xs leading-relaxed text-gitlore-text-secondary">
-              Ingested PR decisions, themes, issues, authors, and merge history — the same evidence the side chat uses.{" "}
+              Ingested PR decisions, themes, issues, authors, and merge history, the same evidence the side chat uses.{" "}
               <span className="text-gitlore-text">Drag</span> to pan (on nodes: use Ctrl/Cmd+drag or middle-drag on empty
               area). <span className="text-gitlore-text">Scroll</span> zooms toward the pointer. Green links = shared closing
               issue; dotted = merge-time neighbors; violet dashed = PR → theme.
@@ -975,7 +975,7 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
               <span className="text-emerald-600 dark:text-emerald-400">◆</span> issue &nbsp;
               <span className="text-slate-500 dark:text-slate-400">◇</span> merge &nbsp;
               <span className="text-emerald-600 dark:text-emerald-400">━</span> shared issue &nbsp;
-              <span className="text-slate-500 dark:text-slate-400">┅</span> time order — open nodes on GitHub.
+              <span className="text-slate-500 dark:text-slate-400">┅</span> time order: open nodes on GitHub.
             </p>
           </div>
         )}
@@ -995,7 +995,7 @@ export function KnowledgeDecisionsGraph({ refreshKey = 0 }: { refreshKey?: numbe
           >
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gitlore-border bg-gitlore-bg/80 px-4 py-3">
               <h2 id="kg-modal-title" className="text-sm font-medium text-gitlore-text">
-                Knowledge graph — full view
+                Knowledge graph: full view
               </h2>
               <div className="flex items-center gap-2">
                 <ZoomToolbar
