@@ -4,5 +4,26 @@
   "buildCommand": "pnpm run build",
   "outputDirectory": "dist",
   "installCommand": "pnpm install",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/auth/:path*",
+      "destination": "https://gitlore.onrender.com/auth/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://gitlore.onrender.com/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://gitlore.onrender.com/health"
+    },
+    {
+      "source": "/webhooks/:path*",
+      "destination": "https://gitlore.onrender.com/webhooks/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }
